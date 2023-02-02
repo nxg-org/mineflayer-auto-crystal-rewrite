@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+        "incremental": true,
+        "module": "NodeNext",
+        "moduleResolution": "nodenext",
+        "declaration": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "noImplicitAny": true,
+        "outDir": "dist/",        
+        "lib": ["es6", "dom", "es2017"]
+
+    },
+    "include": ["src/**/*"],
+    "exclude": []
+}
