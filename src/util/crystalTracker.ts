@@ -34,6 +34,13 @@ function blockPosToCrystalAABB(blockPos: Vec3) {
   );
 }
 
+/**
+ * This class only fails with attempted placements since our positions are bad.
+ * Attempted positions should never actually fail. We attempt a placement EXPECTING a crystal to appear.
+ * Under no circumstances should the placement actually fail.
+ * 
+ * Once we fix that check, we can safely assume all placements and TRULY speed up. >:)
+ */
 export class CrystalTracker extends (EventEmitter as {
   new (): StrictEventEmitter<EventEmitter, CrystalTrackerEvents>;
 }) {
@@ -72,6 +79,10 @@ export class CrystalTracker extends (EventEmitter as {
     this._attemptedPlacements.clear();
     this._fastModeKills.clear();
     this._spawnedEntities.clear();
+  }
+
+  public clearAttempts() {
+    this._attemptedPlacements.clear();
   }
 
   public getAllEntityAABBs(): AABB[] {
