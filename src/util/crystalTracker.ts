@@ -53,12 +53,6 @@ export class CrystalTracker extends (EventEmitter as {
     super();
     this.fastModes = Object.assign({sound: false, explosion: false}, fastModes)
     this.endCrystalType = Object.values(bot.registry.entitiesByName).find((k) => k.name.includes("_crystal"))!.id;
-    this.bot.prependListener("entitySpawn", this.onEntitySpawn);
-    this.bot.prependListener("entityGone", this.onEntityDestroy);
-    // this.bot.prependListener("entityDead", this.onEntityDestroy);
-    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
-    this.bot.prependListener("hardcodedSoundEffectHeard", this.onSound);
-    this.bot._client.prependListener("explosion", this.onExplosion);
     let count = 0;
     let time = performance.now();
     let time1 = performance.now();
@@ -73,6 +67,25 @@ export class CrystalTracker extends (EventEmitter as {
         count = 0;
       }
     })
+  }
+
+  public start() {
+    this.bot.prependListener("entitySpawn", this.onEntitySpawn);
+    this.bot.prependListener("entityGone", this.onEntityDestroy);
+    // this.bot.prependListener("entityDead", this.onEntityDestroy);
+    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
+    this.bot.prependListener("hardcodedSoundEffectHeard", this.onSound);
+    this.bot._client.prependListener("explosion", this.onExplosion);
+  }
+
+  public stop() {
+    this.bot.off("entitySpawn", this.onEntitySpawn);
+    this.bot.off("entityGone", this.onEntityDestroy);
+    // this.bot.prependListener("entityDead", this.onEntityDestroy);
+    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
+    this.bot.off("hardcodedSoundEffectHeard", this.onSound);
+    this.bot._client.off("explosion", this.onExplosion);
+    this.reset();
   }
 
   public reset() {

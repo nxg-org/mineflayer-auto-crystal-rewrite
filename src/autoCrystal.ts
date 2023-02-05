@@ -59,9 +59,8 @@ export class AutoCrystal extends EventEmitter {
   public stop() {
     this.running = false;
     this.target = undefined;
-    this.tracker.reset();
+    this.tracker.stop();
     this.bot.off("entitySpawn", this.onEntitySpawn);
-    // this.bot._client.off("explosion", this.onExplosion);
   }
 
   public attack(entity?: Entity) {
@@ -69,11 +68,10 @@ export class AutoCrystal extends EventEmitter {
     if (!this.target && !entity) return;
     if (!this.target) this.target = entity;
     this.running = true;
+    this.tracker.start();
     this.options.tpsSync.enabled ? null : this.desyncedPlaceThread();
     if (this.options.positionLookup.async) this.asyncPositionThread();
     this.bot.on("entitySpawn", this.onEntitySpawn);
-    // this.bot._client.on("explosion", this.onExplosion);
-    // this.bot.on("hardcodedSoundEffectHeard", this.onSound);
   }
 
   private tickForPosUpdate = () => {
