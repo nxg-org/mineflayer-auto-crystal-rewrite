@@ -5,9 +5,8 @@ import merge from "ts-deepmerge";
 import { Vec3 } from "vec3";
 import { CrystalTracker } from "./util/crystalTracker";
 import { DeepPartial } from "./types";
-import { botEventOnce, crystalOnBlockFilter, DefaultOptions, sleep } from "./util/constants";
-import { EntityController } from "./util/entityController";
-import { oldFindPosition, predictiveFindPosition, testFindPosition } from "./util/getPositions";
+import { DefaultOptions, sleep } from "./util/constants";
+import { predictiveFindPosition, testFindPosition } from "./util/getPositions";
 
 export interface AutoCrystalOptions {
   tpsSync:
@@ -16,25 +15,20 @@ export interface AutoCrystalOptions {
   positionLookup: {
     async: boolean;
   };
-  fastMode?: "ghost" | "sound" | "ghostsound";
-  placement:
-    | {
-        async: false;
-        tickDelay: number;
-        placementPriority: "damage";
-        placesPerTick: number;
-        placeDistance: number;
-        useOffhand: boolean;
-      }
-    | {
-        async: true;
-        tickDelay: number;
-        placementPriority: "damage";
-        placesPerTick: number;
-        placeDistance: number;
-        updateDelay: number;
-        useOffhand: boolean;
-      };
+  fastModes: {
+    sound: boolean;
+    explosion: boolean;
+  };
+  placement: {
+    async: boolean;
+    stagger: boolean;
+    useBackupPositions: boolean;
+    tickDelay: number;
+    placementPriority: "damage";
+    placesPerTick: number;
+    placeDistance: number;
+    useOffhand: boolean;
+  };
   breaking: {
     async: boolean;
     tickDelay: number;
@@ -43,8 +37,7 @@ export interface AutoCrystalOptions {
   };
 }
 
-
-type CheckedEntity = Entity & {packetHit?: true}
+type CheckedEntity = Entity & { packetHit?: true };
 
 export class AutoCrystal extends EventEmitter {
   public readonly placeableBlocks = new Set<number>();
@@ -57,7 +50,7 @@ export class AutoCrystal extends EventEmitter {
 
   constructor(public readonly bot: Bot, options: DeepPartial<AutoCrystalOptions> = {}) {
     super();
-    this.tracker = new CrystalTracker(bot);
+    this.tracker = new CrystalTracker(bot, options.fastModes);
     this.options = merge({}, DefaultOptions, options as AutoCrystalOptions);
     this.placeableBlocks.add(bot.registry.blocksByName.obsidian.id);
     this.placeableBlocks.add(bot.registry.blocksByName.bedrock.id);
@@ -67,7 +60,7 @@ export class AutoCrystal extends EventEmitter {
     this.running = false;
     this.target = undefined;
     this.tracker.reset();
-    // this.bot.off("entitySpawn", this.onEntitySpawn);
+    this.bot.off("entitySpawn", this.onEntitySpawn);
     // this.bot._client.off("explosion", this.onExplosion);
   }
 
@@ -76,35 +69,46 @@ export class AutoCrystal extends EventEmitter {
     if (!this.target && !entity) return;
     if (!this.target) this.target = entity;
     this.running = true;
-    this.options.tpsSync.enabled ? null : this.desyncedAttackThread();
+    this.options.tpsSync.enabled ? null : this.desyncedPlaceThread();
     if (this.options.positionLookup.async) this.asyncPositionThread();
-    // this.bot.on("entitySpawn", this.onEntitySpawn);
+    this.bot.on("entitySpawn", this.onEntitySpawn);
     // this.bot._client.on("explosion", this.onExplosion);
     // this.bot.on("hardcodedSoundEffectHeard", this.onSound);
   }
 
-  protected asyncPositionThread = async () => {
-   
-    while (this.running && this.target?.isValid && this.options.positionLookup.async) {
-      this.positions = this.getPositions();
-      await new Promise((res, rej) => {
-        const botChecker = (e: Entity) => e.id === this.target!.id //&& e.position.equals(lastPos)
-        const botListener = (e: Entity) => {
-          if (botChecker(e)) {
-            this.bot.off("entityMoved", botListener)
-            this.tracker.removeListener("fastCrystalDestroyed", crystalListener);
-            res(undefined);
-          }
-        }
-
-        const crystalListener = (...args: any[]) => {
-          this.bot.off("entityMoved", botListener)
-          this.tracker.removeListener("fastCrystalDestroyed", crystalListener);
+  private tickForPosUpdate = () => {
+    if (!this.target) return Promise.resolve();
+    let lastPos = this.target.position.clone();
+    return new Promise((res, rej) => {
+      const botChecker = (e: Entity) => !this.target || (e.id === this.target.id && !e.position.equals(lastPos));
+      const botListener = (e: Entity) => {
+        if (botChecker(e)) {
+          this.bot.off("entityMoved", botListener);
+          this.tracker.removeListener("serverCrystalDestroyed", crystalListener);
           res(undefined);
         }
-        this.bot.on("entityMoved", botListener);
-        this.tracker.on("fastCrystalDestroyed", crystalListener);
-      })
+      };
+
+      const crystalListener = (...args: any[]) => {
+        this.bot.off("entityMoved", botListener);
+        this.tracker.removeListener("serverCrystalDestroyed", crystalListener);
+        res(undefined);
+      };
+      this.bot.on("entityMoved", botListener);
+      this.tracker.on("serverCrystalDestroyed", crystalListener);
+    });
+  };
+
+  protected asyncPositionThread = async () => {
+    while (this.running && this.target?.isValid && this.options.positionLookup.async) {
+      const time = performance.now();
+      this.positions = this.getPositions();
+      const now = performance.now();
+      // const before = now - time;
+      if (now - time > 50) await sleep(10);
+      else await this.tickForPosUpdate();
+      // const after = performance.now() - now;
+      // console.log("search:", before, "wait:", after, "total:", before + after);
     }
   };
 
@@ -125,16 +129,11 @@ export class AutoCrystal extends EventEmitter {
 
   protected onEntitySpawn = (entity: CheckedEntity) => {
     if (entity.entityType === this.tracker.endCrystalType) {
-      // if good to break
-      if (this.tracker.isOurCrystal(entity.position)) {
-        // this.breakCrystal(entity);
-      } else {
-        console.log("CANNOT BREAK ENTITY")
-      }
+      this.breakCrystal(entity);
     }
   };
 
-  protected desyncedAttackThread = async () => {
+  protected desyncedPlaceThread = async () => {
     // return false;
     while (this.running && this.target?.isValid) {
       if (!this.options.positionLookup.async) {
@@ -142,31 +141,36 @@ export class AutoCrystal extends EventEmitter {
       }
 
       if (this.positions === null) {
-        await botEventOnce(this.bot, "entityMoved", (e) => e.id === this.target?.id);
+        await this.tickForPosUpdate();
         continue;
       }
 
-
-   
-      let breakLim = this.options.placement.placesPerTick
+      // console.log("place cycle");
+      const finalPlacements: [Vec3[], Vec3[]] = [[], []];
+      let breakLim = this.options.placement.placesPerTick;
+      let staggerFlag = false;
       for (let i = 0; i < breakLim && i < this.positions!.length; i++) {
-        const pos = this.positions![i];
-        if (!this.tracker.canPlace(pos)) {
-            if (this.positions!.length < breakLim) {
-              break;
-            }
-            breakLim++
-            continue;
+        const p = this.positions[i];
+        // console.log(p, this.tracker.canPlace(p), this.tracker._attemptedPlacements.size, staggerFlag);
+        if (this.tracker.canPlace(p)) {
+          finalPlacements[i % (staggerFlag ? 2 : 1)].push(p);
+          if (this.options.placement.stagger) staggerFlag = !staggerFlag;
         }
-
-        this.placeCrystal(pos);
-      };
-
-      for (const e of Object.values(this.bot.entities).filter(e => e.entityType === this.tracker.endCrystalType)) {
-        this.breakCrystal(e);
+        else if (this.options.placement.useBackupPositions) {
+          breakLim++;
+        }
       }
+
+      finalPlacements[0].map(this.placeCrystal);
+      if (this.options.placement.stagger && finalPlacements[1].length > 0) {
+        await sleep(50);
+        finalPlacements[1].map(this.placeCrystal);
+      }
+
+      // for (const e of Object.values(this.bot.entities).filter((e) => e.entityType === this.tracker.endCrystalType)) {
+      //   this.breakCrystal(e);
+      // }
       await sleep(50);
-    //  await this.tracker.waitFor("fastCrystalDestroyed")
     }
     this.running = false;
   };
@@ -177,30 +181,28 @@ export class AutoCrystal extends EventEmitter {
 
   public placeCrystal = async (pos: Vec3) => {
     if (!(await this.equipCrystal())) {
-      console.log("fuck")
+      console.log("fuck");
       return this.stop();
     }
     const block = this.bot.blockAt(pos);
-    this.bot.util.move.forceLookAt(block!.position.offset(0, 1, 0));
-    this.bot._genericPlace(block!, new Vec3(0, 1, 0), {forceLook: "ignore", offhand: this.options.placement.useOffhand });
+    this.bot._genericPlace(block!, new Vec3(0, 1, 0), { forceLook: true, offhand: this.options.placement.useOffhand });
     this.tracker.addPlacement(pos);
     return;
   };
 
   public breakCrystal = (info: CheckedEntity) => {
     if (info.id < 0 || info.packetHit) return;
-    // this.bot.util.move.forceLookAt(info.position);
+    this.bot.util.move.forceLookAt(info.position, true);
     this.bot.attack(info);
-    if (this.options.fastMode?.includes("ghost")) info.isValid = false;
     return true;
-  }
+  };
 
   public breakCrystalBlock = (info: Vec3) => {
-      const entities = Object.values(this.bot.entities).filter((e) =>
-        e.position.equals(info.offset(0.5, 1, 0.5))
-      ) as CheckedEntity[];
-      entities.filter((e) => !e.packetHit).forEach((e) => this.breakCrystal(e));
-      return;
+    const entities = Object.values(this.bot.entities).filter((e) =>
+      e.position.equals(info.offset(0.5, 1, 0.5))
+    ) as CheckedEntity[];
+    entities.filter((e) => !e.packetHit).forEach((e) => this.breakCrystal(e));
+    return;
   };
 
   // ====================
@@ -218,8 +220,6 @@ export class AutoCrystal extends EventEmitter {
     return false;
   }
 }
-
-
 
 // protected onExplosion = (packet: any) => {
 //   const explodePos = new Vec3(packet.x, packet.y, packet.z);

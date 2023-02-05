@@ -6,14 +6,15 @@ import { AutoCrystal, AutoCrystalOptions } from "./autoCrystal";
 import type { DeepPartial, genericPlaceOptions } from "./types";
 import customDamageInject from "./util/customDamageCalc";
 
-import utilPlugin from "@nxg-org/mineflayer-util-plugin"
+import utilPlugin, { AABB } from "@nxg-org/mineflayer-util-plugin"
 
 declare module "mineflayer" {
   interface Bot {
     autoCrystal: AutoCrystal;
     _genericPlace: (referenceBlock: Block, faceVector: Vec3, options?: Partial<genericPlaceOptions>) => Promise<Vec3>;
-    _placeEntityWithOptions: (referenceBlock: Block, faceVector: Vec3, options?: Partial<genericPlaceOptions>) => Promise<Vec3>;
+    _placeEntityWithOptions: (referenceBlock: Block, faceVector: Vec3, options?: Partial<genericPlaceOptions>) => Promise<Entity>;
     getExplosionDamages: (targetEntity: Entity, position: Vec3, power: number, rawDamages?: boolean) => number | null;
+    getExplosionDamagesAABB: (targetBB: AABB, position: Vec3, power: number, rawDamages?: boolean) => number;
     selfExplosionDamages: (sourcePos: Vec3, power: number, rawDamages?: boolean) => number | null;
   }
 }

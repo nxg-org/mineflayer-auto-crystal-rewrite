@@ -13,12 +13,18 @@ export const DefaultOptions: AutoCrystalOptions = {
   positionLookup: {
     async: true,
   },
+  fastModes: {
+    sound: true,
+    explosion: true,
+  },
   placement: {
     async: false,
+    stagger: false,
     tickDelay: 0,
     placementPriority: "damage",
-    placesPerTick: 2,
-    placeDistance: 3,
+    placesPerTick: 1,
+    placeDistance: 5,
+    useBackupPositions: false,
     useOffhand: false,
   },
   breaking: {
@@ -47,7 +53,7 @@ export function botEventOnce<K extends keyof BotEvents>(
       emitter.off(event, listener);
       res(undefined);
     };
-    emitter.on(event, listener);
+    emitter.prependListener(event, listener);
   });
 }
 
@@ -104,7 +110,7 @@ export function clientEventOnce<K extends ClientEvents>(
       emitter.off(event, listener);
       res(undefined);
     };
-    emitter.on(event, listener);
+    emitter.prependListener(event, listener);
   });
 }
 

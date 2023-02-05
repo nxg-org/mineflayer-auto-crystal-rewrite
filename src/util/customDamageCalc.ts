@@ -1,3 +1,4 @@
+import { AABB } from "@nxg-org/mineflayer-util-plugin";
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type { Item, NormalizedEnchant } from "prismarine-item";
@@ -21,6 +22,35 @@ function calcExposure(playerPos: Vec3, explosionPos: Vec3, world: any /* prismar
   for (pos.y = playerPos.y; pos.y <= playerPos.y + 1.8; pos.y += 1.8 * dy) {
     for (pos.x = playerPos.x - 0.3 + d3; pos.x <= playerPos.x + 0.3; pos.x += 0.6 * dx) {
       for (pos.z = playerPos.z - 0.3 + d4; pos.z <= playerPos.z + 0.3; pos.z += 0.6 * dz) {
+        const dir = pos.minus(explosionPos);
+        const range = dir.norm();
+        if (world.raycast(explosionPos, dir.normalize(), range) === null) {
+          exposed++;
+        }
+        sampled++;
+      }
+    }
+  }
+  return exposed / sampled;
+}
+
+function calcExposureAABB(entityBB: AABB, explosionPos: Vec3, world: any /* prismarine-world*/) {
+  const xWidth =(entityBB.maxX - entityBB.minX)
+  const yWidth = (entityBB.maxY - entityBB.minY) 
+  const zWidth = (entityBB.maxZ - entityBB.minZ)
+  const dx = 1 / (xWidth * 2 + 1);
+  const dy = 1 / (yWidth* 2 + 1);
+  const dz = 1 / (zWidth * 2 + 1);
+
+  const d3 = (1 - Math.floor(1 / dx) * dx) / 2;
+  const d4 = (1 - Math.floor(1 / dz) * dz) / 2;
+
+  let sampled = 0;
+  let exposed = 0;
+  const pos = new Vec3(0, 0, 0);
+  for (pos.y = entityBB.minY; pos.y <= entityBB.maxY; pos.y += yWidth * dy) {
+    for (pos.x = entityBB.minX + d3; pos.x <= entityBB.maxX; pos.x += xWidth * dx) {
+      for (pos.z = entityBB.minZ + d4; pos.z <= entityBB.maxZ; pos.z += zWidth * dz) {
         const dir = pos.minus(explosionPos);
         const range = dir.norm();
         if (world.raycast(explosionPos, dir.normalize(), range) === null) {
@@ -140,7 +170,7 @@ export default function customDamageInject(bot: Bot) {
     const radius = 2 * power;
     if (distance >= radius) return 0;
   
-    const exposure = calcExposure(targetEntity.position, sourcePos, bot.world);
+    const exposure = calcExposureAABB(bot.util.entity.getEntityAABB(targetEntity), sourcePos, bot.world);
     const impact = (1 - distance / radius) * exposure;
     let damages = Math.floor((impact * impact + impact) * damageMultiplier * power + 1);
     // The following modifiers are constant for the input targetEntity and doesnt depend
@@ -165,4 +195,14 @@ export default function customDamageInject(bot: Bot) {
     }
     return Math.floor(damages);
   };
+
+  bot.getExplosionDamagesAABB = (targetBB: AABB, sourcePos: Vec3, power: number) => {
+    const distance = targetBB.distanceToVec(sourcePos);
+    const radius = 2 * power;
+    if (distance >= radius) return 0;
+
+    const exposure = calcExposureAABB(targetBB, sourcePos, bot.world);
+    const impact = (1 - distance / radius) * exposure;
+    return Math.floor((impact * impact + impact) * damageMultiplier * power + 1);
+  }
 }
