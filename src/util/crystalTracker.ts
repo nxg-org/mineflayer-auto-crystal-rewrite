@@ -3,7 +3,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
 import { EventEmitter } from "events";
-import { botEventOnce, clientEventOnce, sleep } from "./constants";
+import { botEventOnce, clientEventOnce, sleep, strToVec3 } from "./randoms";
 import type { Block } from "prismarine-block";
 import StrictEventEmitter from "strict-event-emitter-types/types/src/index";
 import { AutoCrystalOptions } from "../autoCrystal";
@@ -15,13 +15,7 @@ interface CrystalTrackerEvents {
   fastCrystalDestroyed: (reason: "explosion" | "sound", position: Vec3) => void;
 }
 
-function strToVec3(posStr: string) {
-  const [first, second, third] = posStr
-    .slice(1, posStr.length - 1)
-    .split(", ")
-    .map(Number);
-  return new Vec3(first, second, third);
-}
+
 
 function blockPosToCrystalAABB(blockPos: Vec3) {
   return new AABB(
@@ -33,6 +27,8 @@ function blockPosToCrystalAABB(blockPos: Vec3) {
     blockPos.z + 1.5
   );
 }
+
+
 
 /**
  * This class only fails with attempted placements since our positions are bad.
@@ -136,9 +132,11 @@ export class CrystalTracker extends (EventEmitter as {
   public canPlace(pos: Vec3) {
     const posStr = pos.toString();
     // console.log(this._attemptedPlacements, this._fastModeKills)
-    return !this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr);  
+    return !this._attemptedPlacements.has(posStr) || this._fastModeKills.has(posStr); 
+    // return (!this._attemptedPlacements.has(posStr) && !this._spawnedEntities.has(posStr))
+    // return !this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr);  
     // return (!this._attemptedPlacements.has(posStr) && !this._spawnedEntities.has(posStr)) || this._fastModeKills.has(posStr);
-    // return true;
+    return true;
   }
 
   public isOurCrystal(pos: Vec3) {
@@ -196,7 +194,6 @@ export class CrystalTracker extends (EventEmitter as {
 
   protected onSound = async (soundId: number, soundCategory: number, pt: Vec3, volume: number, pitch: number) => {
     if (!this.fastModes.sound) return;
-    if (soundId !== 231 && soundCategory !== 4) return;
     const explodePosBlock = pt.offset(-0.5, -1, -0.5);
     this.checkDmg("sound", explodePosBlock, pt);
     let vals = this._spawnedEntities.keys();
@@ -211,7 +208,7 @@ export class CrystalTracker extends (EventEmitter as {
     if (!this._spawnedEntities.has(posStr)) return;
     if (this.bot.getExplosionDamagesAABB(blockPosToCrystalAABB(bPos), explodePos, 6) > 0) {
      
-      // this._attemptedPlacements.delete(posStr);
+      this._attemptedPlacements.delete(posStr);
       this._spawnedEntities.delete(posStr);
       this._fastModeKills.add(posStr);
       this.emit("fastCrystalDestroyed", reason, bPos.translate(0.5, 1, 0.5));

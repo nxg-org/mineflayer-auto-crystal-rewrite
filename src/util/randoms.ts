@@ -1,8 +1,17 @@
 import { AutoCrystalOptions } from "../autoCrystal";
 import type { Bot, BotEvents } from "mineflayer";
 import type { Entity } from "prismarine-entity";
-import type { Vec3 } from "vec3";
+import { Vec3 } from "vec3";
 import type {Client} from "minecraft-protocol"
+
+
+export function strToVec3(posStr: string) {
+  const [first, second, third] = posStr
+    .slice(1, posStr.length - 1)
+    .split(", ")
+    .map(Number);
+  return new Vec3(first, second, third);
+}
 
 export const DefaultOptions: AutoCrystalOptions = {
   tpsSync: {
@@ -12,26 +21,25 @@ export const DefaultOptions: AutoCrystalOptions = {
   },
   positionLookup: {
     async: true,
+    positionCount: 1,
   },
   fastModes: {
     sound: true,
     explosion: true,
   },
   placement: {
-    async: false,
     stagger: false,
-    tickDelay: 0,
     placementPriority: "damage",
+    minDamage: 0,
     placesPerTick: 1,
     placeDistance: 5,
     useBackupPositions: false,
     useOffhand: false,
   },
   breaking: {
-    async: false,
-    tickDelay: 0,
-    breaksPerTick: 2,
-    breakDistance: 3,
+    breaksPerTick: 1,
+    breakDistance: 5,
+    useOffHand: false,
   },
 } as const;
 
