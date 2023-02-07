@@ -6,17 +6,12 @@ import { AutoCrystal, AutoCrystalOptions } from "./autoCrystal";
 import type { DeepPartial, genericPlaceOptions } from "./types";
 import { customDamageInject, CustomLookup, customRaytraceImpl } from "./util/customImpls";
 
-import utilPlugin, { AABB, BlockFace } from "@nxg-org/mineflayer-util-plugin"
-
-declare class World {
-  raycast(startPos: Vec3, dir: Vec3, range: number): Block & {face: BlockFace, intersect: Vec3} | null
-}
+import utilPlugin, { AABB } from "@nxg-org/mineflayer-util-plugin"
 
 declare module "mineflayer" {
   interface Bot {
     autoCrystal: AutoCrystal;
     customLookup: CustomLookup;
-    world: World,
     entityRaytrace: (startPos: Vec3, dir: Vec3, maxDistance?: number, matching?: (entity: Entity) => boolean) => Entity & {intersection: Vec3} | null;
     entityAtCursor: (maxDistance?: number) => Entity | null;
     _genericPlace: (referenceBlock: Block, faceVector: Vec3, options?: Partial<genericPlaceOptions>) => Promise<Vec3>;

@@ -234,44 +234,48 @@ export function customRaytraceImpl(bot: Bot) {
     let targetEntity: Entity & {intersection: Vec3} | null = null;
     let targetDist = maxDistance;
     
+    // for (const entity of entities) {
+    //   const aabb = bot.util.entity.getEntityAABB(entity);
+    //   const check = aabb.intersectsSegment(startPos, segment);
+    //   if (check) {
+    //     const dist = startPos.distanceTo(check);
+    //     if (dist < targetDist) {
+    //       targetDist = dist;
+    //       if (matcher(entity)) {
+    //         targetEntity = entity as any;
+    //         targetEntity!.intersection = check;
+    //       }
+    //     }
+    //   }
+    // }
+    // return targetEntity;
+
+    const iterator = new RaycastIterator(startPos, dir.normalize(), maxDistance);
+
     for (const entity of entities) {
-      const aabb = bot.util.entity.getEntityAABB(entity);
-      const check = aabb.intersectsSegment(startPos, segment);
-      if (check) {
-        const dist = startPos.distanceTo(check);
-        if (dist < targetDist) {
-          targetDist = dist;
-          if (matcher(entity)) {
-            targetEntity = entity as any;
-            targetEntity!.intersection = check;
+      const w = entity.width / 2;
+
+      const shapes = [[-w, 0, -w, w, entity.height + (entity.type === "player" ? 0.18 : 0), w]];
+      const intersect = iterator.intersect(shapes as any, entity.position);
+      if (intersect) {
+        const entityDir = entity.position.minus(bot.entity.position); // Can be combined into 1 line
+        const sign = Math.sign(entityDir.dot(dir));
+        if (sign !== -1) {
+          const dist = bot.entity.position.distanceTo(intersect.pos);
+          if (dist < targetDist) {
+            targetDist = dist;
+            if (matcher(entity)) {
+              targetEntity = entity as any;
+              targetEntity!.intersection = intersect.pos;
+            }
+
           }
         }
       }
     }
+
     return targetEntity;
-  }
-  //   for (let i = 0; i < entities.length; i++) {
-  //     const entity = entities[i];
-  //     const w = entity.width / 2;
-
-
-  //     const shapes = [[-w, 0, -w, w, entity.height + (entity.type === "player" ? 0.18 : 0), w]];
-  //     const intersect = iterator.intersect(shapes as any, entity.position);
-  //     if (intersect) {
-  //       const entityDir = entity.position.minus(bot.entity.position); // Can be combined into 1 line
-  //       const sign = Math.sign(entityDir.dot(dir));
-  //       if (sign !== -1) {
-  //         const dist = bot.entity.position.distanceTo(intersect.pos);
-  //         if (dist < targetDist) {
-  //           targetDist = dist;
-  //           if (matcher(entity)) targetEntity = entity;
-  //         }
-  //       }
-  //     }
-  //   }
-
-  //   return targetEntity;
-  // };
+  };
 }
 
 import * as pblock from "prismarine-block";

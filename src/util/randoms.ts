@@ -48,6 +48,7 @@ export const DefaultOptions: AutoCrystalOptions = {
     explosion: true,
   },
   placement: {
+    rotate: true,
     stagger: false,
     raycast: false,
     placementPriority: "closest",
@@ -58,10 +59,12 @@ export const DefaultOptions: AutoCrystalOptions = {
     useOffhand: false,
   },
   breaking: {
+    rotate: true,
     breaksPerTick: 1,
     breakDistance: 5,
     raytrace: false,
-    useOffHand: false,
+    swingArm: false,
+    
   },
 } as const;
 

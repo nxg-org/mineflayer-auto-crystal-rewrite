@@ -1,6 +1,6 @@
 import { Vec3 } from "vec3";
 
-const point = new Vec3(8, 8, 8);
+const point = new Vec3(8, 8, 11);
 const begin = new Vec3(0, 0, 0);
 const cursor = new Vec3(0, 0, 0);
 const end = new Vec3(16, 16, 16);
@@ -19,7 +19,6 @@ for (cursor.y = point.y; begin.y <= cursor.y && cursor.y < end.y; ) {
     let zOff = 0;
     let zNeg = false;
     for (cursor.z = point.z; begin.z <= cursor.z && cursor.z < end.z; ) {
-        if (cursor.y === 0) console.log(cursor)
       if (cursor.distanceTo(point) <= maxDistance) {
         blocks.push(cursor.clone());
       }
