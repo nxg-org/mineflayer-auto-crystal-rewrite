@@ -2,8 +2,8 @@ import { AutoCrystalOptions } from "../autoCrystal";
 import type { Bot, BotEvents } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
-import type {Client} from "minecraft-protocol"
-
+import type { Client } from "minecraft-protocol";
+import { BlockFace } from "@nxg-org/mineflayer-util-plugin";
 
 export function strToVec3(posStr: string) {
   const [first, second, third] = posStr
@@ -11,6 +11,24 @@ export function strToVec3(posStr: string) {
     .split(", ")
     .map(Number);
   return new Vec3(first, second, third);
+}
+
+export function blockFaceToVec(face: BlockFace) {
+  switch (face) {
+    case BlockFace.UNKNOWN: // default to top
+    case BlockFace.TOP:
+      return new Vec3(0, 1, 0);
+    case BlockFace.BOTTOM:
+      return new Vec3(0, -1, 0);
+    case BlockFace.NORTH:
+      return new Vec3(0, 0, -1);
+    case BlockFace.SOUTH:
+      return new Vec3(0, 0, 1);
+    case BlockFace.EAST:
+      return new Vec3(1, 0, 0);
+    case BlockFace.WEST:
+      return new Vec3(-1, 0, 0)
+  }
 }
 
 export const DefaultOptions: AutoCrystalOptions = {
@@ -21,7 +39,9 @@ export const DefaultOptions: AutoCrystalOptions = {
   },
   positionLookup: {
     async: true,
-    positionCount: 1,
+    positionCount: 2,
+    aabbCheck: "none",
+    onlyHighest: false,
   },
   fastModes: {
     sound: true,
@@ -29,7 +49,8 @@ export const DefaultOptions: AutoCrystalOptions = {
   },
   placement: {
     stagger: false,
-    placementPriority: "damage",
+    raycast: false,
+    placementPriority: "closest",
     minDamage: 0,
     placesPerTick: 1,
     placeDistance: 5,
@@ -39,6 +60,7 @@ export const DefaultOptions: AutoCrystalOptions = {
   breaking: {
     breaksPerTick: 1,
     breakDistance: 5,
+    raytrace: false,
     useOffHand: false,
   },
 } as const;
@@ -65,8 +87,6 @@ export function botEventOnce<K extends keyof BotEvents>(
   });
 }
 
-
-
 /**
  * Note: this removes the string and raw-string implementations of emit from minecraft-protocol's client.
  */
@@ -84,26 +104,23 @@ type CustomOverload<T extends (...args: any[]) => any> = T extends {
   (...args: infer A11): infer R11;
 }
   ?
-  | ((...args: A1) => R1)
-  | ((...args: A2) => R2)
-  | ((...args: A3) => R3)
-  | ((...args: A4) => R4)
-  | ((...args: A5) => R5)
-  | ((...args: A6) => R6)
-  | ((...args: A7) => R7)
-  | ((...args: A8) => R8)
-  | ((...args: A10) => R10)
-  | ((...args: A11) => R11)
-  :
-  never;
+      | ((...args: A1) => R1)
+      | ((...args: A2) => R2)
+      | ((...args: A3) => R3)
+      | ((...args: A4) => R4)
+      | ((...args: A5) => R5)
+      | ((...args: A6) => R6)
+      | ((...args: A7) => R7)
+      | ((...args: A8) => R8)
+      | ((...args: A10) => R10)
+      | ((...args: A11) => R11)
+  : never;
 
-type CustomOverloadedParameters<T extends (...args: any[]) => any> = Parameters<
-  CustomOverload<T>
->;
+type CustomOverloadedParameters<T extends (...args: any[]) => any> = Parameters<CustomOverload<T>>;
 
-type ClientFuncs = CustomOverloadedParameters<Client["on"]>
-type ClientEvents = ClientFuncs[0]
-type ClientListeners = ClientFuncs[1]
+type ClientFuncs = CustomOverloadedParameters<Client["on"]>;
+type ClientEvents = ClientFuncs[0];
+type ClientListeners = ClientFuncs[1];
 
 export function clientEventOnce<K extends ClientEvents>(
   emitter: Client,
@@ -122,3 +139,5 @@ export function clientEventOnce<K extends ClientEvents>(
   });
 }
 
+
+export type PlaceType = {block: Vec3, lookHere: Vec3, placeRef: Vec3};

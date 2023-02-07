@@ -4,14 +4,21 @@ import type { Vec3 } from "vec3";
 import type {Entity} from "prismarine-entity";
 import { AutoCrystal, AutoCrystalOptions } from "./autoCrystal";
 import type { DeepPartial, genericPlaceOptions } from "./types";
-import customDamageInject, { CustomLookup } from "./util/customImpls";
+import { customDamageInject, CustomLookup, customRaytraceImpl } from "./util/customImpls";
 
-import utilPlugin, { AABB } from "@nxg-org/mineflayer-util-plugin"
+import utilPlugin, { AABB, BlockFace } from "@nxg-org/mineflayer-util-plugin"
+
+declare class World {
+  raycast(startPos: Vec3, dir: Vec3, range: number): Block & {face: BlockFace, intersect: Vec3} | null
+}
 
 declare module "mineflayer" {
   interface Bot {
     autoCrystal: AutoCrystal;
     customLookup: CustomLookup;
+    world: World,
+    entityRaytrace: (startPos: Vec3, dir: Vec3, maxDistance?: number, matching?: (entity: Entity) => boolean) => Entity & {intersection: Vec3} | null;
+    entityAtCursor: (maxDistance?: number) => Entity | null;
     _genericPlace: (referenceBlock: Block, faceVector: Vec3, options?: Partial<genericPlaceOptions>) => Promise<Vec3>;
     _placeEntityWithOptions: (referenceBlock: Block, faceVector: Vec3, options?: Partial<genericPlaceOptions>) => Promise<Entity>;
     getExplosionDamages: (targetEntity: Entity, position: Vec3, power: number, rawDamages?: boolean) => number | null;
@@ -34,6 +41,7 @@ export function getPlugin(options: DeepPartial<AutoCrystalOptions> = {}) {
         bot.autoCrystal = new AutoCrystal(bot, options);
         bot.customLookup = new CustomLookup(bot);
         bot.loadPlugin(customDamageInject);
+        bot.loadPlugin(customRaytraceImpl);
        
     }
 }

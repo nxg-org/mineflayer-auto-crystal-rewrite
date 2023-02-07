@@ -1,4 +1,4 @@
-import { AABB } from "@nxg-org/mineflayer-util-plugin";
+import { AABB, BlockFace, RaycastIterator } from "@nxg-org/mineflayer-util-plugin";
 import type { Bot, FindBlockOptions } from "mineflayer";
 import { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
@@ -64,13 +64,6 @@ function calcExposureAABB(entityBB: AABB, explosionPos: Vec3, world: any /* pris
   return exposed / sampled;
 }
 
-// https://minecraft.fandom.com/wiki/Armor#Damage_protection
-function getDamageAfterAbsorb(damages: number, armorValue: number, toughness: number) {
-  const var3 = 2 + toughness / 4;
-  const var4 = Math.min(Math.max(armorValue - damages / var3, armorValue * 0.2), 20);
-  return damages * (1 - var4 / 25);
-}
-
 // https://minecraft.fandom.com/wiki/Attribute#Operations
 function getAttributeValue(prop: any) {
   let X = prop.value;
@@ -88,6 +81,17 @@ function getAttributeValue(prop: any) {
     Y += Y * mod.amount;
   }
   return Y;
+}
+
+// https://minecraft.fandom.com/wiki/Armor#Damage_protection
+function getDamageAfterAbsorb(damages: number, armorValue: number, toughness: number) {
+  // const var3 = 2 + toughness / 4;
+  // const var4 = Math.min(Math.max(armorValue - damages / var3, armorValue * 0.2), 20);
+  // return damages * (1 - var4 / 25);
+  const var1 = armorValue / 5;
+  const var2 = armorValue - (4 * damages) / (toughness + 8);
+  const var4 = Math.max(var1, var2);
+  return damages * (1 - var4 / 25);
 }
 
 function getDamageWithEnchantments(damage: number, equipment: Item[]) {
@@ -110,7 +114,7 @@ function getDamageWithEnchantments(damage: number, equipment: Item[]) {
   return damage * (1 - Math.min(enchantments, 20) / 25);
 }
 
-export default function customDamageInject(bot: Bot) {
+export function customDamageInject(bot: Bot) {
   const effects = bot.registry.effects;
   let resistanceIndex = 11; // constant from 1.7.10 to 1.19.2
   for (const effectId in effects) {
@@ -157,8 +161,9 @@ export default function customDamageInject(bot: Bot) {
     if (!rawDamages && bot.entity.attributes[armorProtectionKey]) {
       const armor = getAttributeValue(bot.entity.attributes[armorProtectionKey]);
       const armorToughness = getAttributeValue(bot.entity.attributes[armorToughnessKey]);
-      damages = getDamageAfterAbsorb(damages, armor, armorToughness);
       const equipment = armorPieces.map((piece) => bot.inventory.slots[bot.getEquipmentDestSlot(piece)]);
+
+      damages = getDamageAfterAbsorb(damages, armor, armorToughness);
       damages = getDamageWithEnchantments(damages, equipment);
       damages = getDamageWithEffects(damages, bot.entity.effects as any);
       damages *= difficultyValues[bot.game.difficulty] * 0.5;
@@ -210,6 +215,65 @@ export default function customDamageInject(bot: Bot) {
   };
 }
 
+
+export function customRaytraceImpl(bot: Bot) {
+
+  bot.entityRaytrace = (startPos: Vec3, dir: Vec3, maxDistance = 3.5, matcher?: (e: Entity) => boolean) => {
+    matcher ||= (e) => true;
+    dir = dir.normalize();
+    const block = bot.world.raycast(startPos, dir , maxDistance) as (Block & { intersect: Vec3; face: BlockFace }) | null;
+    maxDistance = block?.intersect.distanceTo(startPos) ?? maxDistance;
+ 
+    const entities = Object.values(bot.entities).filter(
+      (entity) =>
+        entity.username !== bot.username 
+        && bot.util.entity.getEntityAABB(entity).distanceToVec(startPos) <= maxDistance
+    );
+
+    const segment = startPos.plus(dir.scale(maxDistance));
+    let targetEntity: Entity & {intersection: Vec3} | null = null;
+    let targetDist = maxDistance;
+    
+    for (const entity of entities) {
+      const aabb = bot.util.entity.getEntityAABB(entity);
+      const check = aabb.intersectsSegment(startPos, segment);
+      if (check) {
+        const dist = startPos.distanceTo(check);
+        if (dist < targetDist) {
+          targetDist = dist;
+          if (matcher(entity)) {
+            targetEntity = entity as any;
+            targetEntity!.intersection = check;
+          }
+        }
+      }
+    }
+    return targetEntity;
+  }
+  //   for (let i = 0; i < entities.length; i++) {
+  //     const entity = entities[i];
+  //     const w = entity.width / 2;
+
+
+  //     const shapes = [[-w, 0, -w, w, entity.height + (entity.type === "player" ? 0.18 : 0), w]];
+  //     const intersect = iterator.intersect(shapes as any, entity.position);
+  //     if (intersect) {
+  //       const entityDir = entity.position.minus(bot.entity.position); // Can be combined into 1 line
+  //       const sign = Math.sign(entityDir.dot(dir));
+  //       if (sign !== -1) {
+  //         const dist = bot.entity.position.distanceTo(intersect.pos);
+  //         if (dist < targetDist) {
+  //           targetDist = dist;
+  //           if (matcher(entity)) targetEntity = entity;
+  //         }
+  //       }
+  //     }
+  //   }
+
+  //   return targetEntity;
+  // };
+}
+
 import * as pblock from "prismarine-block";
 const { OctahedronIterator } = require("prismarine-world").iterators;
 export class CustomLookup {
@@ -243,16 +307,6 @@ export class CustomLookup {
     let next = start;
     let tick = 0;
 
-    const between = (first: Vec3, second: Vec3, third: Vec3) => {
-      return (
-        first.x <= second.x &&
-        second.x <= third.x &&
-        first.y <= second.y &&
-        second.y <= third.y &&
-        first.z <= second.z &&
-        second.z <= third.z
-      );
-    };
     while (next) {
       const column = this.bot.world.getColumn(next.x, next.z);
       // const nextColStr = `${next.x},${next.z}`;
@@ -268,8 +322,9 @@ export class CustomLookup {
           const cursor = begin.clone();
           const end = cursor.offset(16, 16, 16);
 
-          // console.log(begin, point, end, between(begin, point, end));
-          if (between(begin, point, end)) {
+          // console.log(begin, point, end, this.between(begin, point, end));
+          // if (this.between(begin, point, end)) {
+          if (false) {
             let yOff = 0;
             let yNeg = false;
             for (cursor.y = point.y; begin.y <= cursor.y && cursor.y < end.y; ) {
@@ -330,6 +385,8 @@ export class CustomLookup {
       startedLayer = it.apothem;
       next = it.next();
     }
+
+    // console.log(tick)
     blocks.sort((a, b) => {
       return a.distanceTo(point) - b.distanceTo(point);
     });
@@ -386,5 +443,16 @@ export class CustomLookup {
     }
 
     return nonFullSearchMatcher;
+  };
+
+  private between = (first: Vec3, second: Vec3, third: Vec3) => {
+    return (
+      first.x <= second.x &&
+      second.x <= third.x &&
+      first.y <= second.y &&
+      second.y <= third.y &&
+      first.z <= second.z &&
+      second.z <= third.z
+    );
   };
 }

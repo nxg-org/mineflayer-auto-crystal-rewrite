@@ -3,19 +3,15 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
 import { EventEmitter } from "events";
-import { botEventOnce, clientEventOnce, sleep, strToVec3 } from "./randoms";
+import { botEventOnce, clientEventOnce, PlaceType, sleep, strToVec3 } from "./randoms";
 import type { Block } from "prismarine-block";
 import StrictEventEmitter from "strict-event-emitter-types/types/src/index";
 import { AutoCrystalOptions } from "../autoCrystal";
 
-let time = performance.now();
-let placed = 0;
 interface CrystalTrackerEvents {
   serverCrystalDestroyed: (entity: Entity) => void;
   fastCrystalDestroyed: (reason: "explosion" | "sound", position: Vec3) => void;
 }
-
-
 
 function blockPosToCrystalAABB(blockPos: Vec3) {
   return new AABB(
@@ -28,13 +24,11 @@ function blockPosToCrystalAABB(blockPos: Vec3) {
   );
 }
 
-
-
 /**
  * This class only fails with attempted placements since our positions are bad.
  * Attempted positions should never actually fail. We attempt a placement EXPECTING a crystal to appear.
  * Under no circumstances should the placement actually fail.
- * 
+ *
  * Once we fix that check, we can safely assume all placements and TRULY speed up. >:)
  */
 export class CrystalTracker extends (EventEmitter as {
@@ -47,29 +41,26 @@ export class CrystalTracker extends (EventEmitter as {
 
   constructor(private bot: Bot, public readonly fastModes: Partial<AutoCrystalOptions["fastModes"]> = {}) {
     super();
-    this.fastModes = Object.assign({sound: false, explosion: false}, fastModes)
+    this.fastModes = Object.assign({ sound: false, explosion: false }, fastModes);
     this.endCrystalType = Object.values(bot.registry.entitiesByName).find((k) => k.name.includes("_crystal"))!.id;
     let count = 0;
     let time = performance.now();
-    let time1 = performance.now();
-    this.on("serverCrystalDestroyed", (e) => {
-      count++
+    this.bot.prependListener("entityGone", (e) => {
+      count++;
       const now = performance.now();
-      // console.log(now - time1);
-      time1 = now;
       if (now - time > 1000) {
-        console.log(`${count} cps`);
+        console.log("Placed", count, "cps");
         time = now;
         count = 0;
       }
-    })
+    });
   }
 
   public start() {
     this.bot.prependListener("entitySpawn", this.onEntitySpawn);
     this.bot.prependListener("entityGone", this.onEntityDestroy);
     // this.bot.prependListener("entityDead", this.onEntityDestroy);
-    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
+    this.bot.prependListener("entityUpdate", this.onEntityDestroy)
     this.bot.prependListener("hardcodedSoundEffectHeard", this.onSound);
     this.bot._client.prependListener("explosion", this.onExplosion);
   }
@@ -96,29 +87,13 @@ export class CrystalTracker extends (EventEmitter as {
 
   public getAllEntityAABBs(): AABB[] {
     const vec: AABB[] = [];
-    let positions = this._attemptedPlacements.keys();
-    let pos;
-    // while (!(pos = positions.next()).done) {
-    //   const key = pos.value;
-    //   if (this._fastModeKills.has(key)) continue;
-    //   const [first, second, third] = key
-    //     .slice(1, key.length - 1)
-    //     .split(", ")
-    //     .map(Number);
-    //   const position = new Vec3(first, second, third);
-    //   vec.push(
-    //     new AABB(position.x - 0.5, position.y + 1, position.z - 0.5, position.x + 1.5, position.y + 3, position.z + 1.5)
-    //   );
-    // }
-
-    positions = this._spawnedEntities.keys();
-    while (!(pos = positions.next()).done) {
-      const key = pos.value;
+    const positions = this._spawnedEntities.keys();
+    let info;
+    while (!(info = positions.next()).done) {
+      const key = info.value;
       if (this._fastModeKills.has(key)) continue;
-      const { position } = this._spawnedEntities.get(key)!;
-      vec.push(
-        new AABB(position.x - 0.5, position.y + 1, position.z - 0.5, position.x + 1.5, position.y + 3, position.z + 1.5)
-      );
+      const { position: pos } = this._spawnedEntities.get(key)!;
+      vec.push(new AABB(pos.x - 0.5, pos.y + 1, pos.z - 0.5, pos.x + 1.5, pos.y + 3, pos.z + 1.5));
     }
 
     return vec;
@@ -129,28 +104,32 @@ export class CrystalTracker extends (EventEmitter as {
     this._attemptedPlacements.add(posStr);
   }
 
-  public canPlace(pos: Vec3) {
-    const posStr = pos.toString();
+  public canPlace(pos: PlaceType) {
+    const posStr = pos.block.toString();
     // console.log(this._attemptedPlacements, this._fastModeKills)
-    return !this._attemptedPlacements.has(posStr) || this._fastModeKills.has(posStr); 
+    const botPos = this.bot.entity.position.offset(0, 1.62, 0);
+    return !this._attemptedPlacements.has(posStr) || this._fastModeKills.has(posStr);
     // return (!this._attemptedPlacements.has(posStr) && !this._spawnedEntities.has(posStr))
-    // return !this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr);  
+    // return !this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr);
     // return (!this._attemptedPlacements.has(posStr) && !this._spawnedEntities.has(posStr)) || this._fastModeKills.has(posStr);
     return true;
   }
 
+  public shouldBreak(pos: Vec3) {
+    return !this._fastModeKills.has(pos.toString());
+  }
+
   public isOurCrystal(pos: Vec3) {
     const posStr = pos.offset(-0.5, -1, -0.5).toString();
-    return this._attemptedPlacements.has(posStr) || this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr)
-
+    return (
+      this._attemptedPlacements.has(posStr) || this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr)
+    );
   }
 
   protected onEntitySpawn = (entity: Entity) => {
     if (entity.entityType !== this.endCrystalType) return;
     const pos = entity.position.offset(-0.5, -1, -0.5);
     const posStr = pos.toString();
-   
-    placed++;
     if (this._attemptedPlacements.has(posStr)) {
       this._attemptedPlacements.delete(posStr);
       this._spawnedEntities.set(posStr, entity);
@@ -158,18 +137,8 @@ export class CrystalTracker extends (EventEmitter as {
   };
 
   protected onEntityDestroy = (entity: Entity) => {
-    // console.log(entity.id);
     const posStr = entity.position.offset(-0.5, -1, -0.5).toString();
-    const now = performance.now();
-    if (now - time > 1000) {
-      console.log("PLACED", placed, "per sec");
-      time = now
-      placed = 0;
-    }
-    // console.log(Math.round(now - time));
-    // time = now;
-
-    if (this._attemptedPlacements.has(posStr)) console.log("not possible.")
+    if (this._attemptedPlacements.has(posStr)) console.log("not possible.");
     if (this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr)) {
       // console.log(posStr, this._spawnedEntities.keys(), this._fastModeKills)
       this.emit("serverCrystalDestroyed", entity);
@@ -177,6 +146,8 @@ export class CrystalTracker extends (EventEmitter as {
       this._spawnedEntities.delete(posStr);
       this._fastModeKills.delete(posStr);
     }
+
+    // this._fastModeKills.clear();
   };
 
   protected onExplosion = async (packet: any) => {
@@ -184,7 +155,7 @@ export class CrystalTracker extends (EventEmitter as {
     const explodePos = new Vec3(packet.x, packet.y, packet.z);
     const explodePosBlock = explodePos.offset(-0.5, -1, -0.5);
     this.checkDmg("explosion", explodePosBlock, explodePos);
-    
+
     let vals = this._spawnedEntities.keys();
     let pos: IteratorResult<string, undefined>;
     while ((pos = vals.next()).value !== undefined) {
@@ -203,19 +174,20 @@ export class CrystalTracker extends (EventEmitter as {
     }
   };
 
-  protected checkDmg = (reason: Parameters<CrystalTrackerEvents["fastCrystalDestroyed"]>[0], bPos: Vec3, explodePos: Vec3) => {
+  protected checkDmg = (
+    reason: Parameters<CrystalTrackerEvents["fastCrystalDestroyed"]>[0],
+    bPos: Vec3,
+    explodePos: Vec3
+  ) => {
     const posStr = bPos.toString();
     if (!this._spawnedEntities.has(posStr)) return;
     if (this.bot.getExplosionDamagesAABB(blockPosToCrystalAABB(bPos), explodePos, 6) > 0) {
-     
       this._attemptedPlacements.delete(posStr);
       this._spawnedEntities.delete(posStr);
       this._fastModeKills.add(posStr);
       this.emit("fastCrystalDestroyed", reason, bPos.translate(0.5, 1, 0.5));
-  }
-}
-
-
+    }
+  };
 
   public waitFor = <K extends keyof CrystalTrackerEvents>(
     event: K,

@@ -100,17 +100,17 @@ export class EntityController {
         return entity;
     }
 
-    destroyEntities(...entityIds: number[]) {
-        // destroy entity
-        for (const id of entityIds) {
-            if (!this.checkForEntity(id)) continue;
-            const entity = this.fetchEntity(id);
-            this.bot.emit('entityGone', entity)
-            entity.isValid = false;
-            delete this.bot.entities[id];
+    // destroyEntities(...entityIds: number[]) {
+    //     // destroy entity
+    //     for (const id of entityIds) {
+    //         if (!this.checkForEntity(id)) continue;
+    //         const entity = this.fetchEntity(id);
+    //         this.bot.emit('entityGone', entity)
+    //         entity.isValid = false;
+    //         delete this.bot.entities[id];
          
-        }
-    }
+    //     }
+    // }
 
     invalidateEntities(...entityIds: number[]) {
         entityIds.forEach((id) => {
