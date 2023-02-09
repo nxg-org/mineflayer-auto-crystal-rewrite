@@ -8,9 +8,11 @@ import { isRaycastEntity } from "./randoms";
 import { Ctx } from "../types";
 
 export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): { lookHere: Vec3; id: number } | false {
-  if (crystal.entityType !== ctx.tracker.endCrystalType) return false;
+  if (crystal.entityType !== ctx.placer.endCrystalType) return false;
   if (!ctx.bot.entities[crystal.id]) return false;
   
+  if (ctx.bot.util.entity.eyeDistanceToEntity(crystal) > ctx.options.breaking.breakDistance) return false;
+
   const naiveHit = crystal.position.offset(0, 1.95, 0);
   let hitLook: Vec3 | null = naiveHit;
   let hitId: number = crystal.id;
@@ -40,11 +42,11 @@ export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): 
       if (isRaycastEntity(res)) {
         if (crystal.id === res.id) {
           return { lookHere: rayPos, id: res.id };
-        } else if (res.entityType === ctx.tracker.endCrystalType) {
+        } else if (res.entityType === ctx.placer.endCrystalType) {
           hitLook = rayPos;
           hitId = res.id;
         } else {
-          console.log("failed on", rayPos, "for", crystal.id, "got", res.id, res, ctx.tracker.endCrystalType);
+          console.log("failed on", rayPos, "for", crystal.id, "got", res.id, res, ctx.placer.endCrystalType);
           continue;
         }
       }
