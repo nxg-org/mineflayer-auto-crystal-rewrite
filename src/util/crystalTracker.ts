@@ -3,11 +3,12 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
 import { EventEmitter } from "events";
-import { botEventOnce, clientEventOnce,  sleep, strToVec3 } from "./randoms";
+import { botEventOnce, clientEventOnce, sleep, strToVec3 } from "./randoms";
 import type { Block } from "prismarine-block";
 import StrictEventEmitter from "strict-event-emitter-types/types/src/index";
 import { AutoCrystalOptions } from "../autoCrystal";
-import { PlaceType } from "../types";
+import { DeepPartial, PlaceType } from "../types";
+import merge from "ts-deepmerge";
 
 interface CrystalTrackerEvents {
   serverCrystalDestroyed: (entity: Entity) => void;
@@ -36,13 +37,20 @@ export class CrystalTracker extends (EventEmitter as {
   new (): StrictEventEmitter<EventEmitter, CrystalTrackerEvents>;
 }) {
   public readonly endCrystalType: number;
-  public _attemptedPlacements = new Set<string>();
+  public _attemptedPlacements = new Map<number, Set<string>>();
   public _spawnedEntities = new Map<string, Entity>();
   public _fastModeKills = new Set<string>();
 
-  constructor(private bot: Bot, public readonly fastModes: Partial<AutoCrystalOptions["fastModes"]> = {}) {
+  public currentTick = 0;
+
+  public readonly options: AutoCrystalOptions["crystalTrackerOptions"];
+
+  constructor(private bot: Bot, options: DeepPartial<AutoCrystalOptions["crystalTrackerOptions"]> = {}) {
     super();
-    this.fastModes = Object.assign({ sound: false, explosion: false }, fastModes);
+    this.options = merge(
+      { sound: false, explosion: false, careAboutPastPlacements: false, deletePlacementsBefore: 5 },
+      options as AutoCrystalOptions["crystalTrackerOptions"]
+    );
     this.endCrystalType = Object.values(bot.registry.entitiesByName).find((k) => k.name.includes("_crystal"))!.id;
     let count = 0;
     let time = performance.now();
@@ -54,6 +62,13 @@ export class CrystalTracker extends (EventEmitter as {
         time = now;
         count = 0;
       }
+    });
+
+    this.bot.on("physicsTick", () => {
+      this.deletePlacementsBefore(this.currentTick - this.options.deletePlacementsAfter);
+      this.currentTick++;
+
+      console.log(this._attemptedPlacements);
     });
   }
 
@@ -86,6 +101,27 @@ export class CrystalTracker extends (EventEmitter as {
     this._attemptedPlacements.clear();
   }
 
+  public getAllPlacementSize() {
+    let count = 0;
+    for (const data of this._attemptedPlacements.entries()) {
+      count += data[1].size;
+    }
+    return count;
+  }
+
+  public alreadyPlaced(posStr: string, ticksBack = 5) {
+    let iter = this._attemptedPlacements.entries();
+    let data: IteratorResult<[number, Set<string>]>;
+    while ((data = iter.next()).value !== undefined) {
+      if (data.value[1].has(posStr)) {
+        return data.value[0];
+      }
+      if (this.currentTick - ticksBack > data.value[1]) {
+        return false;
+      }
+    }
+  }
+
   public getAllEntityAABBs(): AABB[] {
     const vec: AABB[] = [];
     const positions = this._spawnedEntities.keys();
@@ -102,18 +138,23 @@ export class CrystalTracker extends (EventEmitter as {
 
   public addPlacement(pos: Vec3) {
     const posStr = pos.toString();
-    this._attemptedPlacements.add(posStr);
+    if (!this._attemptedPlacements.has(this.currentTick)) {
+      this._attemptedPlacements.set(this.currentTick, new Set([posStr]));
+    } else {
+      this._attemptedPlacements.get(this.currentTick)!.add(posStr);
+    }
+    this._fastModeKills.delete(posStr);
+  }
+
+  private deletePlacementsBefore(tick: number) {
+    for (const key of this._attemptedPlacements.keys()) {
+      if (key > tick) this._attemptedPlacements.delete(key); // all other placements should be invalidated now.
+    }
   }
 
   public canPlace(pos: PlaceType) {
     const posStr = pos.block.toString();
-    // console.log(this._attemptedPlacements, this._fastModeKills)
-    const botPos = this.bot.entity.position.offset(0, 1.62, 0);
-    return !this._attemptedPlacements.has(posStr) || this._fastModeKills.has(posStr);
-    // return (!this._attemptedPlacements.has(posStr) && !this._spawnedEntities.has(posStr))
-    // return !this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr);
-    // return (!this._attemptedPlacements.has(posStr) && !this._spawnedEntities.has(posStr)) || this._fastModeKills.has(posStr);
-    return true;
+    return (!this.options.careAboutPastPlacements || !this.alreadyPlaced(posStr)) || this._fastModeKills.has(posStr);
   }
 
   public shouldBreak(pos: Vec3) {
@@ -122,24 +163,29 @@ export class CrystalTracker extends (EventEmitter as {
 
   public isOurCrystal(pos: Vec3) {
     const posStr = pos.offset(-0.5, -1, -0.5).toString();
-    return (
-      this._attemptedPlacements.has(posStr) || this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr)
-    );
+    return this.alreadyPlaced(posStr) || this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr);
   }
 
   protected onEntitySpawn = (entity: Entity) => {
     if (entity.entityType !== this.endCrystalType) return;
     const pos = entity.position.offset(-0.5, -1, -0.5);
     const posStr = pos.toString();
-    if (this._attemptedPlacements.has(posStr)) {
-      this._attemptedPlacements.delete(posStr);
-      this._spawnedEntities.set(posStr, entity);
+    let afterPlace = true;
+    for (const [key, places] of Array.from(this._attemptedPlacements.entries()).reverse()) {
+      if (afterPlace) {
+        if (places.has(posStr)) {
+          places.delete(posStr);
+          this._spawnedEntities.set(posStr, entity);
+          afterPlace = false;
+        }
+      } else {
+        this._attemptedPlacements.delete(key); // all other placements should be invalidated now.
+      }
     }
   };
 
   protected onEntityDestroy = (entity: Entity) => {
     const posStr = entity.position.offset(-0.5, -1, -0.5).toString();
-    if (this._attemptedPlacements.has(posStr)) console.log("not possible.");
     if (this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr)) {
       // console.log(posStr, this._spawnedEntities.keys(), this._fastModeKills)
       this.emit("serverCrystalDestroyed", entity);
@@ -152,7 +198,7 @@ export class CrystalTracker extends (EventEmitter as {
   };
 
   protected onExplosion = async (packet: any) => {
-    if (!this.fastModes.explosion) return;
+    if (!this.options.fastModes.explosion) return;
     const explodePos = new Vec3(packet.x, packet.y, packet.z);
     const explodePosBlock = explodePos.offset(-0.5, -1, -0.5);
     this.checkDmg("explosion", explodePosBlock, explodePos);
@@ -165,7 +211,7 @@ export class CrystalTracker extends (EventEmitter as {
   };
 
   protected onSound = async (soundId: number, soundCategory: number, pt: Vec3, volume: number, pitch: number) => {
-    if (!this.fastModes.sound) return;
+    if (!this.options.fastModes.sound) return;
     const explodePosBlock = pt.offset(-0.5, -1, -0.5);
     this.checkDmg("sound", explodePosBlock, pt);
     let vals = this._spawnedEntities.keys();
@@ -183,7 +229,6 @@ export class CrystalTracker extends (EventEmitter as {
     const posStr = bPos.toString();
     if (!this._spawnedEntities.has(posStr)) return;
     if (this.bot.getExplosionDamagesAABB(blockPosToCrystalAABB(bPos), explodePos, 6) > 0) {
-      this._attemptedPlacements.delete(posStr);
       this._spawnedEntities.delete(posStr);
       this._fastModeKills.add(posStr);
       this.emit("fastCrystalDestroyed", reason, bPos.translate(0.5, 1, 0.5));

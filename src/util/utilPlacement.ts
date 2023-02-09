@@ -210,6 +210,7 @@ export function predictiveFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
       return getSortedRecursive(places)[0] || [];
   }
 
+  return [];
   // const sixth = performance.now();
   // console.log("final sort:", sixth - fourth)
 

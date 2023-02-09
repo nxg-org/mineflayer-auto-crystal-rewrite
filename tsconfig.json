@@ -3,12 +3,12 @@
         "incremental": true,
         "module": "NodeNext",
         "moduleResolution": "nodenext",
+        "target": "ES6",
         "declaration": true,
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "noImplicitAny": true,
         "outDir": "dist/",        
         "lib": ["es6", "dom", "es2017"]
 

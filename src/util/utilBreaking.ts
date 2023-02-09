@@ -19,18 +19,18 @@ export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): 
     hitLook = null;
     const players: { [id: string]: AABB } = {};
     const eyePos = ctx.bot.entity.position.offset(0, ctx.bot.entity.height, 0);
-    const checkPts = AABBUtils.getEntityAABB(crystal).toVertices().reverse();
+    const checkPts = AABBUtils.getEntityAABB(crystal).expand(-0.05, -0.05, -0.05).toVertices().reverse();
     checkPts.unshift(naiveHit);
 
     Object.values(ctx.bot.entities).forEach((e) => {
-      if (e.type === "player") players[e.id] = AABBUtils.getEntityAABB(e);
+      if (e.type === "player" && e.id !== ctx.bot.entity.id) players[e.id] = AABBUtils.getEntityAABB(e);
     });
 
     for (const rayPos of checkPts) {
-      const res = ctx.bot.util.raytrace.entityRaytraceRaw(
+      const res = ctx.bot.util.raytrace.entityRaytrace(
         eyePos,
         rayPos.minus(eyePos).normalize(),
-        players,
+        // players,
         ctx.options.breaking.breakDistance
       );
       if (!res) {

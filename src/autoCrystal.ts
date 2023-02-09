@@ -21,11 +21,16 @@ export interface AutoCrystalOptions {
     positionDistanceFromOrigin?: number;
     aabbCheck: "predictive" | "actual" | "none" | "all";
   };
-  fastModes: {
-    sound: boolean;
-    explosion: boolean;
-  };
+  crystalTrackerOptions: {
+    fastModes: {
+      sound: boolean,
+      explosion: boolean,
+    }
+    careAboutPastPlacements: boolean;
+    deletePlacementsAfter: number;
+  }
   placement: {
+    careAboutPastPlacements: boolean;
     rotate: boolean;
     stagger: boolean;
     useBackupPositions: boolean;
@@ -65,7 +70,7 @@ export class AutoCrystal extends EventEmitter {
 
   constructor(public readonly bot: Bot, options: DeepPartial<AutoCrystalOptions> = {}) {
     super();
-    this.tracker = new CrystalTracker(bot, options.fastModes);
+    this.tracker = new CrystalTracker(bot, options.crystalTrackerOptions);
     this.options = merge({}, DefaultOptions, options as AutoCrystalOptions);
     this.placeableBlocks.add(bot.registry.blocksByName.obsidian.id);
     this.placeableBlocks.add(bot.registry.blocksByName.bedrock.id);
@@ -210,10 +215,11 @@ export class AutoCrystal extends EventEmitter {
         //   i,
         //   breakLim,
         //   this.positions!.length,
-        //   this.tracker._attemptedPlacements.size
+        //   this.tracker.getAllPlacementSize()
         // );
         if (this.tracker.canPlace(p)) {
           finalPlacements[i % (staggerFlag ? 2 : 1)].push(p);
+          this.tracker.addPlacement(p.block);
           if (this.options.placement.stagger) staggerFlag = !staggerFlag;
         } else if (this.options.placement.useBackupPositions) breakLim++;
       }
@@ -228,7 +234,7 @@ export class AutoCrystal extends EventEmitter {
       }
 
       // rough fix.
-      if (count++ % clearNum === 0) this.tracker.clearAttempts();
+      // if (count++ % clearNum === 0) this.tracker.clearAttempts();
     }
     if (this.running) this.stop();
   };
@@ -249,7 +255,6 @@ export class AutoCrystal extends EventEmitter {
       offhand: this.options.placement.useOffhand,
       swingArm: this.options.placement.useOffhand ? "left" : "right",
     });
-    this.tracker.addPlacement(placeInfo.block);
     return;
   };
 
@@ -274,7 +279,7 @@ export class AutoCrystal extends EventEmitter {
       hitId = test.id;
     }
 
-    if (hitLook != naiveHit) console.log("hitting", hitId, "with", hitLook, "instead of", naiveHit);
+    if (!hitLook.equals(naiveHit)) console.log("hitting", hitId, "with", hitLook, "instead of", naiveHit);
     if (this.options.breaking.rotate) this.bot.util.move.forceLookAt(hitLook, true);
     if (!this.bot.entities[hitId]) {
       console.log("somehow cant hit an entity.");
