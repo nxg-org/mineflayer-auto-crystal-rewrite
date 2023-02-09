@@ -23,7 +23,7 @@ export type DeepPartial<T> = T extends object ? {
 
 export type EntityRaycastReturn = (Block | Entity) & {intersect: Vec3, face: BlockFace}
 
-export type PlaceType = {block: Vec3, lookHere: Vec3, placeRef: Vec3};
+export type PlaceType = {block: Vec3, lookHere: Vec3, placeRef: Vec3, dmg: number};
 
-type Ctx = { bot: Bot; tracker: CrystalTracker; options: AutoCrystalOptions };
+export type Ctx = { bot: Bot; tracker: CrystalTracker; options: AutoCrystalOptions };
 

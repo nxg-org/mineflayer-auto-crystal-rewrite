@@ -25,6 +25,12 @@ export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | fals
   if (playerBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
   if (ctx.bot.blockAt(pos.offset(0, 1, 0))?.name !== "air") return false;
 
+  const dmg = ctx.bot.getExplosionDamages(entity, pos, 6) ?? -1;
+
+  if (ctx.options.placement.minDamage > 0) {
+    if (dmg < ctx.options.placement.minDamage) return false;
+  }
+
   if (ctx.options.placement.raycast) {
     let placeRef = new Vec3(0, 1, 0);
     const checkPts = AABB.fromBlock(pos).toVertices().reverse();
@@ -42,16 +48,12 @@ export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | fals
         continue;
       }
       placeRef = blockFaceToVec(rayBlock.face);
-      return { block: pos, lookHere: rayBlock.intersect, placeRef };
+      return { block: pos, lookHere: rayBlock.intersect, placeRef, dmg };
     }
     return false;
   }
 
-  if (ctx.options.placement.minDamage > 0) {
-    if (ctx.bot.getExplosionDamages(entity, pos, 6) ?? -1 < ctx.options.placement.minDamage) return false;
-  }
-
-  return { block: pos, lookHere: pos.offset(0.5, 1, 0.5), placeRef: new Vec3(0, 1, 0) };
+  return { block: pos, lookHere: pos.offset(0.5, 1, 0.5), placeRef: new Vec3(0, 1, 0), dmg };
 }
 
 export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
@@ -101,18 +103,26 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
         continue;
       }
       placeRef = blockFaceToVec(rayBlock.face);
-      return { block: loc, lookHere: rayBlock.intersect, placeRef };
+      const dmg = ctx.bot.getExplosionDamages(entity, loc.offset(0.5, 1, 0.5), 6) ?? -1;
+      if (dmg < ctx.options.placement.minDamage) return null;
+      return { block: loc, lookHere: rayBlock.intersect, placeRef, dmg };
     }
     return null;
   };
 
   blocks = blocks.filter(blockInfoFunc);
+
+ 
   if (ctx.options.placement.raycast) {
     return blocks.map(raycastFunc).filter((bl) => bl !== null) as PlaceType[];
   } else {
-    return blocks.map((loc) => {
-      return { block: loc, lookHere: loc.offset(0.5, 1, 0.5), placeRef: defaultPlaceRef };
-    });
+    return blocks
+      .map((loc) => {
+        const dmg = ctx.bot.getExplosionDamages(entity, loc.offset(0.5, 1, 0.5), 6) ?? -1;
+        if (dmg < ctx.options.placement.minDamage) return null;
+        return { block: loc, lookHere: loc.offset(0.5, 1, 0.5), placeRef: defaultPlaceRef, dmg };
+      })
+      .filter((bl) => bl !== null) as PlaceType[];
   }
 }
 
@@ -166,14 +176,10 @@ export function predictiveFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
 
   let places = testFindPosition(ctx, entity);
 
-  let placeDmgs = places.map((p) => {
-    return { info: p, dmg: ctx.bot.getExplosionDamages(entity, p.block.offset(0.5, 1, 0.5), 6) ?? -1 };
-  });
-
-  places = places.filter((p) => placeDmgs.find((pDmg) => pDmg.info === p)!.dmg >= ctx.options.placement.minDamage);
+  places = places.filter((p) => p.dmg >= ctx.options.placement.minDamage);
   const count = ctx.options.placement.useBackupPositions
     ? ctx.options.positionLookup.positionCount
-    : ctx.options.placement.placesPerTick;
+    : ctx.options.placement.placesPerTry;
 
   switch (ctx.options.placement.placementPriority) {
     case "closest":
@@ -183,26 +189,25 @@ export function predictiveFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
       places.sort((a, b) => b.block.distanceSquared(entity.position) - a.block.distanceSquared(entity.position));
       return getSortedRecursive(places)[0] || [];
     case "damage":
-      placeDmgs.sort((a, b) => b.dmg - a.dmg);
+      places.sort((a, b) => b.dmg - a.dmg);
 
       const killDmg = entity.health ?? 20;
-      for (const info of placeDmgs) {
+      for (const info of places) {
         if (info.dmg >= killDmg) {
-          return [info.info];
+          return [info];
         }
       }
-      places.sort((a, b) => placeDmgs.findIndex((bl) => bl.info === a) - placeDmgs.findIndex((bl) => bl.info === b));
 
       const finalFound = getSortedRecursive(places);
       finalFound.sort(
         (a, b) =>
           b
-            .slice(0, ctx.options.placement.placesPerTick)
-            .map((pos) => placeDmgs.find((info) => info.info === pos)!.dmg)
+            .slice(0, ctx.options.placement.placesPerTry)
+            .map((a) => a.dmg)
             .reduce((a, b) => a + b) -
           a
-            .slice(0, ctx.options.placement.placesPerTick)
-            .map((pos) => placeDmgs.find((info) => info.info === pos)!.dmg)
+            .slice(0, ctx.options.placement.placesPerTry)
+            .map((a) => a.dmg)
             .reduce((a, b) => a + b)
       );
       return finalFound[0] || [];

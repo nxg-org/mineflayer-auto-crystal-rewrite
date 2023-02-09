@@ -23,29 +23,33 @@ export interface AutoCrystalOptions {
   };
   crystalTrackerOptions: {
     fastModes: {
-      sound: boolean,
-      explosion: boolean,
-    }
+      sound: boolean;
+      explosion: boolean;
+    };
     careAboutPastPlacements: boolean;
     deletePlacementsAfter: number;
-  }
+  };
   placement: {
+    predictOnBreak: boolean;
+    predictOnExplosion: boolean;
     careAboutPastPlacements: boolean;
     rotate: boolean;
-    stagger: boolean;
     useBackupPositions: boolean;
     raycast: boolean;
     placementPriority: "damage" | "closest" | "farthest" | "none";
     minDamage: number;
-    placesPerTick: number;
+    placesPerTry: number;
     placeDistance: number;
     useOffhand: boolean;
-  };
+  } & ({ stagger: false } | { stagger: true; staggerDelay: number });
   breaking: {
+    hitAll: boolean;
     minDamage: number;
     rotate: boolean;
     useOffhand: boolean;
-    breaksPerTick: number;
+    breaksPerTry: number;
+    triesPerCrystal: number;
+    delayBetweenTries: number;
     breakDistance: number;
     raytrace: boolean;
   } & ({ swingArm: false } | { swingArm: true; offhand: boolean });
@@ -67,6 +71,8 @@ export class AutoCrystal extends EventEmitter {
   private wantsBreak = false;
   private shouldBreak = false;
   private toBreak: Entity[] = [];
+  private breaksThisTick = 0;
+  private placesThisTick = 0;
 
   constructor(public readonly bot: Bot, options: DeepPartial<AutoCrystalOptions> = {}) {
     super();
@@ -76,20 +82,14 @@ export class AutoCrystal extends EventEmitter {
     this.placeableBlocks.add(bot.registry.blocksByName.bedrock.id);
   }
 
-  private onLocalTick = () => {
+  private onLocalTick = async () => {
     if (this.wantsBreak) {
       this.shouldBreak = true;
       this.wantsBreak = false;
-    } else if (this.shouldBreak) {
-      const start = Math.min(this.options.breaking.breaksPerTick, this.toBreak.length);
-      for (let i = start - 1; i >= 0; i--) {
-        this.breakCrystal(this.toBreak[i]);
-      }
-      this.emit("brokeCrystals", this.toBreak);
-      this.toBreak = [];
-      this.wantsBreak = false;
-      this.shouldBreak = false;
     }
+
+    this.breaksThisTick = 0;
+    this.placesThisTick = 0;
   };
 
   public stop() {
@@ -106,7 +106,11 @@ export class AutoCrystal extends EventEmitter {
     if (!this._target) this._target = entity;
     this.tracker.start();
     this.running = true;
-    this.options.tpsSync.enabled ? null : this.desyncedPlaceThread();
+    if (this.options.tpsSync.enabled) {
+    } else {
+      this.desyncedPlaceThread();
+      this.desyncedBreakThread();
+    }
     if (this.options.positionLookup.async) this.asyncPositionThread();
     this.bot.prependListener("entitySpawn", this.onEntitySpawn);
     this.bot.on("physicsTick", this.onLocalTick);
@@ -170,24 +174,45 @@ export class AutoCrystal extends EventEmitter {
   };
 
   protected onEntitySpawn = async (entity: Entity) => {
+    if (!this._target) return;
     if (entity.entityType === this.tracker.endCrystalType) {
-      if (this.options.tpsSync.enabled) await sleep(this.options.tpsSync.breakTicks);
-      else await sleep(this.options.tpsSync.breakDelay);
-      this.breakCrystal(entity);
-      // if (!this._target) return;
-      // const posInfo = isPosGood(this, this._target, entity.position.offset(-0.5, -1, -0.5))
-      // if (posInfo) this.placeCrystal(posInfo)
+      if (!this.options.placeAndBreak) {
+        this.toBreak.push(entity);
+        this.wantsBreak = true;
+      } else {
+        this.breakCrystal(entity);
+      }
+      if (this.options.placement.predictOnBreak && (!this.shouldBreak || !this.options.placeAndBreak)) {
+        const blockPos = entity.position.offset(-0.5, -1, -0.5);
+        const posInfo = isPosGood(this, this._target, blockPos);
+        if (posInfo) {
+          const dmgs = this.positions.map((p) => p.dmg);
+          const minDmg = Math.min(posInfo.dmg, ...dmgs);
+          const maxDmg = Math.max(posInfo.dmg, ...dmgs);
+          if (posInfo.dmg > minDmg || posInfo.dmg === maxDmg) {
+            this.tracker.addPlacement(blockPos);
+            this.placeCrystal(posInfo);
+          }
+        }
+      }
+    }
+  };
+
+  protected onFastExplosion = async (reason: string, explodePos: Vec3) => {
+    if (!this._target) return;
+    if (this.options.placement.predictOnExplosion) {
+      const posInfo = isPosGood(this, this._target, explodePos);
+      if (posInfo) {
+        this.tracker.addPlacement(explodePos);
+        this.placeCrystal(posInfo);
+      }
     }
   };
 
   protected desyncedPlaceThread = async () => {
     if (this.options.tpsSync.enabled) return;
-    let count = 0;
-    while (this.running && this._target?.isValid) {
-      const clearNum = this.options.placement.useBackupPositions
-        ? Math.ceil(this.options.positionLookup.positionCount / this.options.placement.placesPerTick)
-        : 1;
 
+    while (this.running && this._target?.isValid) {
       if (!this.options.positionLookup.async) {
         this.positions = this.getPositions();
       }
@@ -198,25 +223,14 @@ export class AutoCrystal extends EventEmitter {
       }
 
       if (this.shouldBreak && !this.options.placeAndBreak) {
-        console.log("here.");
         await this.waitForCrystalBreak();
       }
 
-      // console.log("place loop", this.positions.length);
       const finalPlacements: [PlaceType[], PlaceType[]] = [[], []];
-      let breakLim = this.options.placement.placesPerTick;
+      let breakLim = this.options.placement.placesPerTry;
       let staggerFlag = false;
       for (let i = 0; i < breakLim && i < this.positions!.length; i++) {
         const p = this.positions[i];
-        // console.log(
-        //   p.block,
-        //   this.tracker.canPlace(p),
-        //   staggerFlag,
-        //   i,
-        //   breakLim,
-        //   this.positions!.length,
-        //   this.tracker.getAllPlacementSize()
-        // );
         if (this.tracker.canPlace(p)) {
           finalPlacements[i % (staggerFlag ? 2 : 1)].push(p);
           this.tracker.addPlacement(p.block);
@@ -226,9 +240,9 @@ export class AutoCrystal extends EventEmitter {
 
       finalPlacements[0].map(this.placeCrystal);
       if (this.options.placement.stagger && finalPlacements[1].length > 0) {
-        await sleep(50);
+        await sleep(this.options.placement.staggerDelay);
         finalPlacements[1].map(this.placeCrystal);
-        await sleep(this.options.tpsSync.placeDelay - 50);
+        await sleep(this.options.tpsSync.placeDelay - this.options.placement.staggerDelay);
       } else {
         await sleep(this.options.tpsSync.placeDelay);
       }
@@ -239,12 +253,49 @@ export class AutoCrystal extends EventEmitter {
     if (this.running) this.stop();
   };
 
+  private desyncedBreakThread = async () => {
+    if (this.options.tpsSync.enabled) return;
+    const getDmg = (i: Entity, target: Entity) => this.bot.getExplosionDamages(i, target!.position, 6, true) ?? -1;
+
+    while (this.running && this._target?.isValid) {
+      if (!this.shouldBreak && !this.options.placeAndBreak) {
+        await sleep(50);
+        continue;
+      }
+
+      if (this.toBreak.length === 0) {
+        await sleep(50);
+        continue;
+      }
+
+      const tasks = [];
+      const broken = [];
+      let target: Entity | undefined;
+      let count = 0;
+      while (!!(target = this.toBreak.pop())) {
+        tasks.push(this.breakCrystal(target));
+        broken.push(target);
+        if (!this.options.breaking.hitAll) {
+          this.toBreak = this.toBreak.filter((i) => getDmg(i, target!) <= 0);
+        }
+
+        if (count++ > this.options.breaking.breaksPerTry) break;
+      }
+
+      this.emit("brokeCrystals", broken);
+      this.wantsBreak = false;
+      this.shouldBreak = false;
+      await sleep(this.options.tpsSync.breakDelay);
+    }
+  };
+
   // ========================
   //     crystal logic
   // ========================
 
-  public placeCrystal = async (placeInfo: PlaceType): Promise<void> => {
+  public placeCrystal = async (placeInfo: PlaceType) => {
     if (!(await this.equipCrystal())) return this.stop();
+    // if (this.placesThisTick++ > this.options.placement.placesPerTry) return;
     const block = this.bot.blockAt(placeInfo.block);
     if (!block) return;
 
@@ -258,38 +309,46 @@ export class AutoCrystal extends EventEmitter {
     return;
   };
 
-  public breakCrystal = async (info: Entity): Promise<void> => {
-    if (!this.target) return;
-    if (info.entityType !== this.tracker.endCrystalType) return;
-    if (!this.bot.entities[info.id]) return;
+  public breakCrystal = async (info: Entity) => {
+    if (!this.target) return "no target";
+    if (info.entityType !== this.tracker.endCrystalType) return "not end crystal";
+    if (!this.bot.entities[info.id]) return "fuck";
 
-    if (!this.shouldBreak && !this.options.placeAndBreak) {
-      this.toBreak.push(info);
-      this.wantsBreak = true;
-      return;
-    }
-
+    const npw = performance.now();
+    console.log("breaking", info.position, "last time:", npw - time);
+    time = npw;
     const naiveHit = info.position.offset(0, 1.95, 0);
-    let hitLook: Vec3 | null = naiveHit;
-    let hitId: number = info.id;
+    let hitLook = naiveHit;
+    let hitId = info.id;
     if (this.options.breaking.raytrace) {
-      const test = shouldAttemptAttack(this, this._target!, info)
+      const test = shouldAttemptAttack(this, this._target!, info);
       if (!test) return;
       hitLook = test.lookHere;
       hitId = test.id;
     }
 
     if (!hitLook.equals(naiveHit)) console.log("hitting", hitId, "with", hitLook, "instead of", naiveHit);
-    if (this.options.breaking.rotate) this.bot.util.move.forceLookAt(hitLook, true);
-    if (!this.bot.entities[hitId]) {
-      console.log("somehow cant hit an entity.");
-      return;
+
+    for (let i = 0; i < this.options.breaking.triesPerCrystal; i++) {
+      if (this.breaksThisTick++ > this.options.breaking.breaksPerTry) return "max tries";
+
+      if (!this.bot.entities[hitId]) {
+        console.log("somehow cant hit the entity despite raytacing it.");
+        return "entity gone";
+      }
+
+      if (this.options.breaking.rotate) this.bot.util.move.forceLookAt(hitLook, true);
+      (this.bot as any).attack(
+        this.bot.entities[hitId],
+        this.options.breaking.swingArm,
+        this.options.breaking.useOffhand
+      );
+
+      await sleep(this.options.breaking.delayBetweenTries);
+      if (!this.bot.entities[hitId]?.isValid) return "success";
     }
-    (this.bot as any).attack(
-      this.bot.entities[hitId],
-      this.options.breaking.swingArm,
-      this.options.breaking.useOffhand
-    );
+
+    return "ran out of tries?";
   };
 
   // ====================
@@ -307,3 +366,5 @@ export class AutoCrystal extends EventEmitter {
     return false;
   }
 }
+
+let time = performance.now();
