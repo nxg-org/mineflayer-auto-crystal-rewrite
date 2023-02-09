@@ -4,20 +4,22 @@ import type { Entity } from "prismarine-entity";
 import merge from "ts-deepmerge";
 import { Vec3 } from "vec3";
 import { CrystalTracker } from "./util/crystalTracker";
-import { DeepPartial } from "./types";
-import { blockFaceToVec, DefaultOptions, PlaceType, sleep } from "./util/randoms";
-import { isPosGood, predictiveFindPosition, testFindPosition } from "./util/getPositions";
+import { DeepPartial, EntityRaycastReturn, PlaceType } from "./types";
+import { blockFaceToVec, DefaultOptions, isRaycastEntity, sleep } from "./util/randoms";
+import { isPosGood, predictiveFindPosition, testFindPosition } from "./util/utilPlacement";
+import { AABB, AABBUtils, BlockFace } from "@nxg-org/mineflayer-util-plugin";
+import { shouldAttemptAttack } from "./util/utilBreaking";
 
 export interface AutoCrystalOptions {
+  placeAndBreak: boolean;
   tpsSync:
     | { enabled: false; placeDelay: number; breakDelay: number }
     | { enabled: true; placeTicks: number; breakTicks: number };
   positionLookup: {
     async: boolean;
     positionCount: number;
-
+    positionDistanceFromOrigin?: number;
     aabbCheck: "predictive" | "actual" | "none" | "all";
-    onlyHighest: boolean;
   };
   fastModes: {
     sound: boolean;
@@ -35,7 +37,9 @@ export interface AutoCrystalOptions {
     useOffhand: boolean;
   };
   breaking: {
+    minDamage: number;
     rotate: boolean;
+    useOffhand: boolean;
     breaksPerTick: number;
     breakDistance: number;
     raytrace: boolean;
@@ -47,13 +51,17 @@ export class AutoCrystal extends EventEmitter {
 
   public options: AutoCrystalOptions;
   public readonly tracker: CrystalTracker;
+  private _target?: Entity;
+  private positions: PlaceType[] = [];
+  private running = false;
+
   public get target() {
     return this._target;
   }
-  private _target?: Entity;
-  private positions: PlaceType[] | null = null;
-  private calcedPositions: boolean = false;
-  private running: boolean = false;
+
+  private wantsBreak = false;
+  private shouldBreak = false;
+  private toBreak: Entity[] = [];
 
   constructor(public readonly bot: Bot, options: DeepPartial<AutoCrystalOptions> = {}) {
     super();
@@ -63,11 +71,28 @@ export class AutoCrystal extends EventEmitter {
     this.placeableBlocks.add(bot.registry.blocksByName.bedrock.id);
   }
 
+  private onLocalTick = () => {
+    if (this.wantsBreak) {
+      this.shouldBreak = true;
+      this.wantsBreak = false;
+    } else if (this.shouldBreak) {
+      const start = Math.min(this.options.breaking.breaksPerTick, this.toBreak.length);
+      for (let i = start - 1; i >= 0; i--) {
+        this.breakCrystal(this.toBreak[i]);
+      }
+      this.emit("brokeCrystals", this.toBreak);
+      this.toBreak = [];
+      this.wantsBreak = false;
+      this.shouldBreak = false;
+    }
+  };
+
   public stop() {
     this.running = false;
     this._target = undefined;
     this.tracker.stop();
     this.bot.off("entitySpawn", this.onEntitySpawn);
+    this.bot.off("physicsTick", this.onLocalTick);
   }
 
   public attack(entity?: Entity) {
@@ -79,6 +104,7 @@ export class AutoCrystal extends EventEmitter {
     this.options.tpsSync.enabled ? null : this.desyncedPlaceThread();
     if (this.options.positionLookup.async) this.asyncPositionThread();
     this.bot.prependListener("entitySpawn", this.onEntitySpawn);
+    this.bot.on("physicsTick", this.onLocalTick);
   }
 
   private tickForPosUpdate = () => {
@@ -100,13 +126,23 @@ export class AutoCrystal extends EventEmitter {
         this.bot.off("entityMoved", botListener);
         this.bot.off("entitySpawn", crystalListener);
         this.tracker.off("serverCrystalDestroyed", crystalListener);
-
         res(undefined);
       };
 
       this.bot.on("entityMoved", botListener);
       this.bot.on("entitySpawn", crystalListener);
       this.tracker.on("serverCrystalDestroyed", crystalListener);
+    });
+  };
+
+  private waitForCrystalBreak = () => {
+    if (!this._target) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const crystalListener = (...args: any[]) => {
+        this.off("brokeCrystals", crystalListener);
+        res(undefined);
+      };
+      this.on("brokeCrystals", crystalListener);
     });
   };
 
@@ -130,8 +166,7 @@ export class AutoCrystal extends EventEmitter {
 
   protected onEntitySpawn = async (entity: Entity) => {
     if (entity.entityType === this.tracker.endCrystalType) {
-      if (this.options.tpsSync.enabled) await sleep(0); // todo
-      // todo
+      if (this.options.tpsSync.enabled) await sleep(this.options.tpsSync.breakTicks);
       else await sleep(this.options.tpsSync.breakDelay);
       this.breakCrystal(entity);
       // if (!this._target) return;
@@ -143,7 +178,6 @@ export class AutoCrystal extends EventEmitter {
   protected desyncedPlaceThread = async () => {
     if (this.options.tpsSync.enabled) return;
     let count = 0;
-
     while (this.running && this._target?.isValid) {
       const clearNum = this.options.placement.useBackupPositions
         ? Math.ceil(this.options.positionLookup.positionCount / this.options.placement.placesPerTick)
@@ -153,26 +187,31 @@ export class AutoCrystal extends EventEmitter {
         this.positions = this.getPositions();
       }
 
-      if (this.positions === null || this.positions.length === 0) {
+      if (this.positions.length === 0) {
         await this.tickForPosUpdate();
         continue;
       }
 
-      console.log("place loop", this.positions.length);
+      if (this.shouldBreak && !this.options.placeAndBreak) {
+        console.log("here.");
+        await this.waitForCrystalBreak();
+      }
+
+      // console.log("place loop", this.positions.length);
       const finalPlacements: [PlaceType[], PlaceType[]] = [[], []];
       let breakLim = this.options.placement.placesPerTick;
       let staggerFlag = false;
       for (let i = 0; i < breakLim && i < this.positions!.length; i++) {
         const p = this.positions[i];
-        console.log(
-          p.block,
-          this.tracker.canPlace(p),
-          staggerFlag,
-          i,
-          breakLim,
-          this.positions!.length,
-          this.tracker._attemptedPlacements.size
-        );
+        // console.log(
+        //   p.block,
+        //   this.tracker.canPlace(p),
+        //   staggerFlag,
+        //   i,
+        //   breakLim,
+        //   this.positions!.length,
+        //   this.tracker._attemptedPlacements.size
+        // );
         if (this.tracker.canPlace(p)) {
           finalPlacements[i % (staggerFlag ? 2 : 1)].push(p);
           if (this.options.placement.stagger) staggerFlag = !staggerFlag;
@@ -198,13 +237,15 @@ export class AutoCrystal extends EventEmitter {
   //     crystal logic
   // ========================
 
-  public placeCrystal = async (placeInfo: PlaceType) => {
+  public placeCrystal = async (placeInfo: PlaceType): Promise<void> => {
     if (!(await this.equipCrystal())) return this.stop();
     const block = this.bot.blockAt(placeInfo.block);
     if (!block) return;
 
+    this.bot.util.move.forceLookAt(placeInfo.lookHere, true);
     this.bot._genericPlace(block!, placeInfo.placeRef, {
-      forceLook: this.options.placement.rotate,
+      forceLook: "ignore",
+      // forceLook: this.options.placement.rotate,
       offhand: this.options.placement.useOffhand,
       swingArm: this.options.placement.useOffhand ? "left" : "right",
     });
@@ -212,39 +253,38 @@ export class AutoCrystal extends EventEmitter {
     return;
   };
 
-  public breakCrystal = (info: Entity) => {
+  public breakCrystal = async (info: Entity): Promise<void> => {
+    if (!this.target) return;
     if (info.entityType !== this.tracker.endCrystalType) return;
-    const naiveHit = info.position.offset(0, 2, 0);
+    if (!this.bot.entities[info.id]) return;
+
+    if (!this.shouldBreak && !this.options.placeAndBreak) {
+      this.toBreak.push(info);
+      this.wantsBreak = true;
+      return;
+    }
+
+    const naiveHit = info.position.offset(0, 1.95, 0);
     let hitLook: Vec3 | null = naiveHit;
     let hitId: number = info.id;
     if (this.options.breaking.raytrace) {
-      const eyePos = this.bot.entity.position.offset(0, this.bot.entity.height, 0);
-      const rayPos = naiveHit;
-      hitLook = null;
-      const res = this.bot.entityRaytrace(
-        eyePos,
-        rayPos.minus(eyePos).normalize(),
-        this.options.breaking.breakDistance,
-        (e) => e.entityType === this.tracker.endCrystalType // ignore players.
-      );
-      if (!res) return console.log("no entity.");
-
-      if (info.id === res.id) {
-        hitLook = res.intersection;
-      }
-
-      // technically unnecessary check since only hit will be crystals.
-      else if (res.entityType === this.tracker.endCrystalType) {
-        hitLook = rayPos;
-        hitId = res.id;
-        console.log("new entity to hit ig", info.id, res.id, res.entityType);
-      }
-
-      if (hitLook === null) return console.log("failed."); // cannot hit entity since all raytracing failed.
+      const test = shouldAttemptAttack(this, this._target!, info)
+      if (!test) return;
+      hitLook = test.lookHere;
+      hitId = test.id;
     }
 
-    if (this.options.breaking.rotate) this.bot.lookAt(hitLook, true);
-    (this.bot as any).attack(info, this.options.breaking.swingArm); // todo add off-hand functionality.
+    if (hitLook != naiveHit) console.log("hitting", hitId, "with", hitLook, "instead of", naiveHit);
+    if (this.options.breaking.rotate) this.bot.util.move.forceLookAt(hitLook, true);
+    if (!this.bot.entities[hitId]) {
+      console.log("somehow cant hit an entity.");
+      return;
+    }
+    (this.bot as any).attack(
+      this.bot.entities[hitId],
+      this.options.breaking.swingArm,
+      this.options.breaking.useOffhand
+    );
   };
 
   // ====================

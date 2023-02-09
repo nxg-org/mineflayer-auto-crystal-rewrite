@@ -1,4 +1,4 @@
-import { AABB, BlockFace, RaycastIterator } from "@nxg-org/mineflayer-util-plugin";
+import { AABB, AABBUtils, BlockFace, RaycastIterator } from "@nxg-org/mineflayer-util-plugin";
 import type { Bot, FindBlockOptions } from "mineflayer";
 import { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
@@ -100,13 +100,16 @@ function getDamageWithEnchantments(damage: number, equipment: Item[]) {
         .map(
           (armor) =>
             armor?.enchants
-              .map((enchant) =>
-                enchant?.name === "protection"
-                  ? enchant.lvl
-                  : enchant?.name === "blast_protection"
-                  ? enchant.lvl * 2
-                  : 0
-              )
+              .map((enchant) => {
+                switch (enchant?.name) {
+                  case "protection":
+                    return enchant.lvl;
+                  case "blast_protection":
+                    return enchant.lvl * 2;
+                  default:
+                    return 0;
+                }
+              })
               .reduce((b: number, a: number) => b + a, 0) ?? [0]
         )
         .reduce((b: number, a: number) => b + a, 0)
@@ -178,7 +181,7 @@ export function customDamageInject(bot: Bot) {
     const radius = 2 * power;
     if (distance >= radius) return 0;
 
-    const exposure = calcExposureAABB(bot.util.entity.getEntityAABB(targetEntity), sourcePos, bot.world);
+    const exposure = calcExposureAABB(AABBUtils.getEntityAABB(targetEntity), sourcePos, bot.world);
     const impact = (1 - distance / radius) * exposure;
     let damages = Math.floor((impact * impact + impact) * damageMultiplier * power + 1);
     // The following modifiers are constant for the input targetEntity and doesnt depend
@@ -215,67 +218,51 @@ export function customDamageInject(bot: Bot) {
   };
 }
 
+export function customAttackImpl(bot: Bot) {
+  bot.attack = attack;
 
-export function customRaytraceImpl(bot: Bot) {
+  function swingArm(arm = "right", showHand = true) {
+    const hand = arm === "right" ? 0 : 1;
+    const packet: { hand?: 0 | 1 } = {};
+    if (showHand) packet.hand = hand;
+    bot._client.write("arm_animation", packet);
+  }
 
-  bot.entityRaytrace = (startPos: Vec3, dir: Vec3, maxDistance = 3.5, matcher?: (e: Entity) => boolean) => {
-    matcher ||= (e) => true;
-    dir = dir.normalize();
-    const block = bot.world.raycast(startPos, dir , maxDistance) as (Block & { intersect: Vec3; face: BlockFace }) | null;
-    maxDistance = block?.intersect.distanceTo(startPos) ?? maxDistance;
- 
-    const entities = Object.values(bot.entities).filter(
-      (entity) =>
-        entity.username !== bot.username 
-        && bot.util.entity.getEntityAABB(entity).distanceToVec(startPos) <= maxDistance
-    );
-
-    const segment = startPos.plus(dir.scale(maxDistance));
-    let targetEntity: Entity & {intersection: Vec3} | null = null;
-    let targetDist = maxDistance;
-    
-    // for (const entity of entities) {
-    //   const aabb = bot.util.entity.getEntityAABB(entity);
-    //   const check = aabb.intersectsSegment(startPos, segment);
-    //   if (check) {
-    //     const dist = startPos.distanceTo(check);
-    //     if (dist < targetDist) {
-    //       targetDist = dist;
-    //       if (matcher(entity)) {
-    //         targetEntity = entity as any;
-    //         targetEntity!.intersection = check;
-    //       }
-    //     }
-    //   }
-    // }
-    // return targetEntity;
-
-    const iterator = new RaycastIterator(startPos, dir.normalize(), maxDistance);
-
-    for (const entity of entities) {
-      const w = entity.width / 2;
-
-      const shapes = [[-w, 0, -w, w, entity.height + (entity.type === "player" ? 0.18 : 0), w]];
-      const intersect = iterator.intersect(shapes as any, entity.position);
-      if (intersect) {
-        const entityDir = entity.position.minus(bot.entity.position); // Can be combined into 1 line
-        const sign = Math.sign(entityDir.dot(dir));
-        if (sign !== -1) {
-          const dist = bot.entity.position.distanceTo(intersect.pos);
-          if (dist < targetDist) {
-            targetDist = dist;
-            if (matcher(entity)) {
-              targetEntity = entity as any;
-              targetEntity!.intersection = intersect.pos;
-            }
-
-          }
-        }
+  function attack(target: { id: number }, swing = true, offhand = false) {
+    console.log("attacking!");
+    // arm animation comes before the use_entity packet on 1.8
+    if (bot.supportFeature("armAnimationBeforeUse")) {
+      if (swing) {
+        swingArm(offhand ? "left" : "right");
+      }
+      useEntity(target, 1);
+    } else {
+      useEntity(target, 1);
+      if (swing) {
+        swingArm(offhand ? "left" : "right");
       }
     }
+  }
 
-    return targetEntity;
-  };
+  function useEntity(target: { id: number }, leftClick: 0 | 1, x?: number, y?: number, z?: number) {
+    const sneaking = bot.getControlState("sneak");
+    if (x && y && z) {
+      bot._client.write("use_entity", {
+        target: target.id,
+        mouse: leftClick,
+        x,
+        y,
+        z,
+        sneaking,
+      });
+    } else {
+      bot._client.write("use_entity", {
+        target: target.id,
+        mouse: leftClick,
+        sneaking,
+      });
+    }
+  }
 }
 
 import * as pblock from "prismarine-block";

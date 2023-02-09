@@ -2,47 +2,20 @@ import type { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
 import type { Bot } from "mineflayer";
 import { Vec3 } from "vec3";
-import { AABB } from "@nxg-org/mineflayer-util-plugin";
+import { AABB, AABBUtils, BlockFace, RaycastIterator } from "@nxg-org/mineflayer-util-plugin";
 import { CrystalTracker } from "./crystalTracker";
 import { AutoCrystalOptions } from "../autoCrystal";
-import { blockFaceToVec, PlaceType } from "./randoms";
-
-export function getEntityAABB(entity: { position: Vec3; height: number }) {
-  const w = entity.height / 2;
-  const { x, y, z } = entity.position;
-  return new AABB(-w, 0, -w, w, entity.height, w).offset(x, y, z);
-}
-
-type Ctx = { bot: Bot; tracker: CrystalTracker; options: AutoCrystalOptions };
+import { blockFaceToVec } from "./randoms";
+import { Ctx, EntityRaycastReturn, PlaceType } from "../types";
+import { getAABBsFromOption } from "./utilBoth";
 
 export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | false {
-
   const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
   const playerBBs = Object.values(ctx.bot.entities)
-  .filter((e) => e.type === "player")
-  .map((e) => ctx.bot.util.entity.getEntityAABB(e));
+    .filter((e) => e.type === "player")
+    .map(AABBUtils.getEntityAABB);
 
-
-  let crystalBBs: AABB[];
-  switch (ctx.options.positionLookup.aabbCheck) {
-    case "all":
-      crystalBBs = Object.values(ctx.bot.entities)
-        .filter((e) => e.entityType === ctx.tracker.endCrystalType)
-        .map((e) => ctx.bot.util.entity.getEntityAABB(e));
-      crystalBBs.push(...ctx.tracker.getAllEntityAABBs());
-      break;
-    case "actual":
-      crystalBBs = Object.values(ctx.bot.entities)
-        .filter((e) => e.entityType === ctx.tracker.endCrystalType)
-        .map((e) => ctx.bot.util.entity.getEntityAABB(e));
-      break;
-    case "predictive":
-      crystalBBs = ctx.tracker.getAllEntityAABBs();
-      break;
-    case "none":
-      crystalBBs = [];
-      break;
-  }
+  const crystalBBs = getAABBsFromOption(ctx);
 
   if (eyePos.distanceTo(pos) > ctx.options.placement.placeDistance) return false;
   const { x, y, z } = pos;
@@ -74,39 +47,19 @@ export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | fals
     return false;
   }
 
-  return {block: pos, lookHere: pos.offset(0.5, 1, 0.5), placeRef: new Vec3(0, 1, 0)}
+  if (ctx.options.placement.minDamage > 0) {
+    if (ctx.bot.getExplosionDamages(entity, pos, 6) ?? -1 < ctx.options.placement.minDamage) return false;
+  }
+
+  return { block: pos, lookHere: pos.offset(0.5, 1, 0.5), placeRef: new Vec3(0, 1, 0) };
 }
 
-export function testFindPosition(
-  ctx: { bot: Bot; tracker: CrystalTracker; options: AutoCrystalOptions },
-  entity: Entity
-): PlaceType[] {
-  let crystalBBs: AABB[];
-  switch (ctx.options.positionLookup.aabbCheck) {
-    case "all":
-      crystalBBs = Object.values(ctx.bot.entities)
-        .filter((e) => e.entityType === ctx.tracker.endCrystalType)
-        .map((e) => ctx.bot.util.entity.getEntityAABB(e));
-      crystalBBs.push(...ctx.tracker.getAllEntityAABBs());
-      break;
-    case "actual":
-      crystalBBs = Object.values(ctx.bot.entities)
-        .filter((e) => e.entityType === ctx.tracker.endCrystalType)
-        .map((e) => ctx.bot.util.entity.getEntityAABB(e));
-      break;
-    case "predictive":
-      crystalBBs = ctx.tracker.getAllEntityAABBs();
-      break;
-    case "none":
-      crystalBBs = [];
-      break;
-  }
+export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
   const playerBBs = Object.values(ctx.bot.entities)
     .filter((e) => e.type === "player")
-    .map((e) => ctx.bot.util.entity.getEntityAABB(e));
-  // crystalBBs.forEach(e=>e.expand(0.005, 0, 0.005))
+    .map(AABBUtils.getEntityAABB);
 
-  // const first = performance.now();
+  const crystalBBs = getAABBsFromOption(ctx);
 
   const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
   const blockInfoFunc = (pos: Vec3) => {
@@ -124,7 +77,7 @@ export function testFindPosition(
   let blocks = ctx.bot.customLookup.findBlocks({
     point: findBlocksNearPoint,
     matching: [ctx.bot.registry.blocksByName.obsidian.id, ctx.bot.registry.blocksByName.bedrock.id],
-    maxDistance: 5,
+    maxDistance: ctx.options.placement.placeDistance + 2,
     count: 50,
   });
 
@@ -134,11 +87,13 @@ export function testFindPosition(
     const checkPts = AABB.fromBlock(loc).toVertices().reverse();
     checkPts.unshift(loc.offset(0.5, 1, 0.5));
     for (const rayPos of checkPts) {
+      // const rayBlock = ctx.bot.util.raytrace.entityRaytrace(
       const rayBlock = ctx.bot.world.raycast(
         eyePos,
         rayPos.minus(eyePos).normalize(),
         ctx.options.placement.placeDistance
       );
+
       if (rayBlock === null) {
         continue;
       }
@@ -171,32 +126,33 @@ export function testFindPosition(
  * @param ctx
  * @param entity
  */
-export function predictiveFindPosition(
-  ctx: { bot: Bot; tracker: CrystalTracker; options: AutoCrystalOptions },
-  entity: Entity
-): PlaceType[] {
+export function predictiveFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
   if (!entity) return [];
   const predictedAABBs: { [base: string]: AABB[] } = {};
-  let places = testFindPosition(ctx, entity);
-  const isValidPosition = (org: Vec3, pos: Vec3) => {
+
+  function isValidPosition(org: Vec3, pos: Vec3) {
     const { x, y, z } = pos;
     const newCrystalBox = new AABB(x - 0.5, y + 1, z - 0.5, x + 1.5, y + 3, z + 1.5);
+    if (ctx.options.positionLookup.positionDistanceFromOrigin !== undefined) {
+      if (predictedAABBs[org.toString()][0]?.distanceToVec(pos) > ctx.options.positionLookup.positionDistanceFromOrigin)
+        return false;
+    }
     return predictedAABBs[org.toString()].filter((aabb) => aabb.intersects(newCrystalBox)).length === 0;
-  };
+  }
 
-  const getSortedRecursive = (places: PlaceType[]) => {
+  function getSortedRecursive(places: PlaceType[]) {
     return places.map((b) => {
       if (!b) return [];
       const finalBlocks: PlaceType[] = [b];
       const index = b.block.toString();
       predictedAABBs[index] = predictedAABBs[index] ?? [
-        getEntityAABB({ position: b.block.offset(0.5, 1, 0.5), height: 2.0 }),
+        AABBUtils.getEntityAABBRaw({ position: b.block.offset(0.5, 1, 0.5), height: 2.0 }),
       ];
 
       for (let i = 1; i < count && i < places.length; i++) {
         const foundBlock = places.filter((bl) => isValidPosition(b.block, bl.block))[0];
         if (!foundBlock) break;
-        const foundAABB = getEntityAABB({ position: foundBlock.block.offset(0.5, 1, 0.5), height: 2.0 });
+        const foundAABB = AABBUtils.getEntityAABBRaw({ position: foundBlock.block.offset(0.5, 1, 0.5), height: 2.0 });
         if (!predictedAABBs[index].some((aabb) => aabb.equals(foundAABB))) {
           predictedAABBs[index].push(foundAABB);
           finalBlocks.push(foundBlock);
@@ -206,10 +162,12 @@ export function predictiveFindPosition(
       delete predictedAABBs[index];
       return finalBlocks;
     });
-  };
+  }
+
+  let places = testFindPosition(ctx, entity);
 
   let placeDmgs = places.map((p) => {
-    return { info: p, dmg: ctx.bot.getExplosionDamages(entity, p.block.offset(0.5, 1, 0.5), 6) ?? 0 };
+    return { info: p, dmg: ctx.bot.getExplosionDamages(entity, p.block.offset(0.5, 1, 0.5), 6) ?? -1 };
   });
 
   places = places.filter((p) => placeDmgs.find((pDmg) => pDmg.info === p)!.dmg >= ctx.options.placement.minDamage);
@@ -226,7 +184,6 @@ export function predictiveFindPosition(
       return getSortedRecursive(places)[0] || [];
     case "damage":
       placeDmgs.sort((a, b) => b.dmg - a.dmg);
-      places.sort((a, b) => placeDmgs.findIndex((bl) => bl.info === a) - placeDmgs.findIndex((bl) => bl.info === b));
 
       const killDmg = entity.health ?? 20;
       for (const info of placeDmgs) {
@@ -234,6 +191,7 @@ export function predictiveFindPosition(
           return [info.info];
         }
       }
+      places.sort((a, b) => placeDmgs.findIndex((bl) => bl.info === a) - placeDmgs.findIndex((bl) => bl.info === b));
 
       const finalFound = getSortedRecursive(places);
       finalFound.sort(

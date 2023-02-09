@@ -4,6 +4,7 @@ import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
 import type { Client } from "minecraft-protocol";
 import { BlockFace } from "@nxg-org/mineflayer-util-plugin";
+import { EntityRaycastReturn } from "../types";
 
 export function strToVec3(posStr: string) {
   const [first, second, third] = posStr
@@ -32,6 +33,7 @@ export function blockFaceToVec(face: BlockFace) {
 }
 
 export const DefaultOptions: AutoCrystalOptions = {
+  placeAndBreak: true,
   tpsSync: {
     enabled: false,
     placeDelay: 50,
@@ -41,7 +43,6 @@ export const DefaultOptions: AutoCrystalOptions = {
     async: true,
     positionCount: 2,
     aabbCheck: "none",
-    onlyHighest: false,
   },
   fastModes: {
     sound: true,
@@ -51,7 +52,7 @@ export const DefaultOptions: AutoCrystalOptions = {
     rotate: true,
     stagger: false,
     raycast: false,
-    placementPriority: "closest",
+    placementPriority: "damage",
     minDamage: 0,
     placesPerTick: 1,
     placeDistance: 5,
@@ -59,11 +60,13 @@ export const DefaultOptions: AutoCrystalOptions = {
     useOffhand: false,
   },
   breaking: {
+    minDamage: 0,
     rotate: true,
     breaksPerTick: 1,
     breakDistance: 5,
     raytrace: false,
     swingArm: false,
+    useOffhand: false,
     
   },
 } as const;
@@ -143,4 +146,7 @@ export function clientEventOnce<K extends ClientEvents>(
 }
 
 
-export type PlaceType = {block: Vec3, lookHere: Vec3, placeRef: Vec3};
+
+export function isRaycastEntity(raycast: EntityRaycastReturn): raycast is Entity & { intersect: Vec3; face: BlockFace } {
+  return !!(raycast as any).entityType;
+}

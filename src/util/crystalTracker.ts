@@ -3,10 +3,11 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import { Vec3 } from "vec3";
 import { EventEmitter } from "events";
-import { botEventOnce, clientEventOnce, PlaceType, sleep, strToVec3 } from "./randoms";
+import { botEventOnce, clientEventOnce,  sleep, strToVec3 } from "./randoms";
 import type { Block } from "prismarine-block";
 import StrictEventEmitter from "strict-event-emitter-types/types/src/index";
 import { AutoCrystalOptions } from "../autoCrystal";
+import { PlaceType } from "../types";
 
 interface CrystalTrackerEvents {
   serverCrystalDestroyed: (entity: Entity) => void;
@@ -60,7 +61,7 @@ export class CrystalTracker extends (EventEmitter as {
     this.bot.prependListener("entitySpawn", this.onEntitySpawn);
     this.bot.prependListener("entityGone", this.onEntityDestroy);
     // this.bot.prependListener("entityDead", this.onEntityDestroy);
-    this.bot.prependListener("entityUpdate", this.onEntityDestroy)
+    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
     this.bot.prependListener("hardcodedSoundEffectHeard", this.onSound);
     this.bot._client.prependListener("explosion", this.onExplosion);
   }
