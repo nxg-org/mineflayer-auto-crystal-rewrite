@@ -9,7 +9,7 @@ import { blockFaceToVec } from "./randoms";
 import { Ctx, EntityRaycastReturn, PlaceType } from "../types";
 import { getAABBsFromOption } from "./utilBoth";
 
-export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | false {
+export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType | false {
   const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
   const playerBBs = Object.values(ctx.bot.entities)
     .filter((e) => e.type === "player")
@@ -17,15 +17,16 @@ export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | fals
 
   const crystalBBs = getAABBsFromOption(ctx);
 
-  if (eyePos.distanceTo(pos) > ctx.options.placement.placeDistance) return false;
-  const { x, y, z } = pos;
+  if (eyePos.distanceTo(blockPos) > ctx.options.placement.placeDistance) return false;
+  const { x, y, z } = blockPos;
   const newCrystalBox = new AABB(x - 0.5, y + 1, z - 0.5, x + 1.5, y + 3, z + 1.5); //.expand(0.005, 0, 0.005);
   if (crystalBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
   newCrystalBox.expand(-0.5, 0, -0.5);
   if (playerBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
-  if (ctx.bot.blockAt(pos.offset(0, 1, 0))?.name !== "air") return false;
+  if (ctx.bot.blockAt(blockPos.offset(0, 1, 0))?.name !== "air") return false;
 
-  const dmg = ctx.bot.getExplosionDamages(entity, pos, 6) ?? -1;
+  const offset = blockPos.offset(0.5, 1, 0.5);
+  const dmg = ctx.bot.getExplosionDamages(entity, offset, 6) ?? -1;
 
   if (ctx.options.placement.minDamage > 0) {
     if (dmg < ctx.options.placement.minDamage) return false;
@@ -33,8 +34,8 @@ export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | fals
 
   if (ctx.options.placement.raycast) {
     let placeRef = new Vec3(0, 1, 0);
-    const checkPts = AABB.fromBlock(pos).toVertices().reverse();
-    checkPts.unshift(pos.offset(0.5, 1, 0.5));
+    const checkPts = AABB.fromBlock(blockPos).toVertices().reverse();
+    checkPts.unshift(offset);
     for (const rayPos of checkPts) {
       const rayBlock = ctx.bot.world.raycast(
         eyePos,
@@ -42,18 +43,20 @@ export function isPosGood(ctx: Ctx, entity: Entity, pos: Vec3): PlaceType | fals
         ctx.options.placement.placeDistance
       );
       if (rayBlock === null) {
+        console.log("null")
         continue;
       }
-      if (!rayBlock.position.equals(pos)) {
+      if (!rayBlock.position.equals(blockPos)) {
         continue;
       }
       placeRef = blockFaceToVec(rayBlock.face);
-      return { block: pos, lookHere: rayBlock.intersect, placeRef, dmg };
+      return { block: blockPos, lookHere: rayBlock.intersect, placeRef, dmg };
     }
+    console.log(blockPos, "failed.");
     return false;
   }
 
-  return { block: pos, lookHere: pos.offset(0.5, 1, 0.5), placeRef: new Vec3(0, 1, 0), dmg };
+  return { block: blockPos, lookHere: blockPos.offset(0.5, 1, 0.5), placeRef: new Vec3(0, 1, 0), dmg };
 }
 
 export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
@@ -83,16 +86,19 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     count: 50,
   });
 
+  const bbs: {[id: string]: AABB} = {};
+  Object.values(ctx.bot.entities).filter(e=>e.type==="player" && e.id !== ctx.bot.entity.id).forEach(e=>bbs[e.id] = AABBUtils.getEntityAABB(e))
   const defaultPlaceRef = new Vec3(0, 1, 0);
   const raycastFunc = (loc: Vec3): PlaceType | null => {
     let placeRef = new Vec3(0, 1, 0);
     const checkPts = AABB.fromBlock(loc).toVertices().reverse();
     checkPts.unshift(loc.offset(0.5, 1, 0.5));
     for (const rayPos of checkPts) {
-      // const rayBlock = ctx.bot.util.raytrace.entityRaytrace(
-      const rayBlock = ctx.bot.world.raycast(
+      const rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
+      // const rayBlock = ctx.bot.world.raycast(
         eyePos,
         rayPos.minus(eyePos).normalize(),
+        bbs,
         ctx.options.placement.placeDistance
       );
 

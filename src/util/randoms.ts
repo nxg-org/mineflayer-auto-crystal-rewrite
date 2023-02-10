@@ -42,7 +42,7 @@ export const DefaultOptions: AutoCrystalOptions = {
   positionLookup: {
     async: true,
     positionCount: 2,
-    aabbCheck: "none",
+    aabbCheck: "actual",
   },
   crystalTrackerOptions: {
     fastModes: {
@@ -53,6 +53,7 @@ export const DefaultOptions: AutoCrystalOptions = {
     deletePlacementsAfter: 2,
   },
   placement: {
+    breakWaitTimeout: 200,
     predictOnBreak: false,
     predictOnExplosion: false,
     careAboutPastPlacements: false,
@@ -181,4 +182,12 @@ export function getIterableValues<K, V>(map: Iterable<readonly [K, V]>): Iterabl
           }
       }
   };
+}
+
+export function getViewDirection (pitch: number, yaw: number) {
+  const csPitch = Math.cos(pitch)
+  const snPitch = Math.sin(pitch)
+  const csYaw = Math.cos(yaw)
+  const snYaw = Math.sin(yaw)
+  return new Vec3(-snYaw * csPitch, snPitch, -csYaw * csPitch)
 }

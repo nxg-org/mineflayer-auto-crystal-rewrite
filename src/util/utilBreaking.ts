@@ -21,8 +21,9 @@ export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): 
     hitLook = null;
     const players: { [id: string]: AABB } = {};
     const eyePos = ctx.bot.entity.position.offset(0, ctx.bot.entity.height, 0);
-    const checkPts = AABBUtils.getEntityAABB(crystal).expand(-0.05, -0.05, -0.05).toVertices().reverse();
+    const checkPts = AABBUtils.getEntityAABB(crystal).toVertices();
     checkPts.unshift(naiveHit);
+    checkPts.unshift(crystal.position);
 
     Object.values(ctx.bot.entities).forEach((e) => {
       if (e.type === "player" && e.id !== ctx.bot.entity.id) players[e.id] = AABBUtils.getEntityAABB(e);

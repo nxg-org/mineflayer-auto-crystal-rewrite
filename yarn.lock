@@ -16,10 +16,10 @@
     jsonwebtoken "^9.0.0"
     uuid "^8.3.0"
 
-"@nxg-org/mineflayer-util-plugin@^1.7.8":
-  version "1.7.8"
-  resolved "https://registry.yarnpkg.com/@nxg-org/mineflayer-util-plugin/-/mineflayer-util-plugin-1.7.8.tgz#63c9e23a45d2ea455616a382274ea9bfea9d0ff9"
-  integrity sha512-aBaw0aqluIVdQo1zyYHMQxzY9OUNGvN71D8K0q6d0UdlS8aGaZor31XQJH5yRTMbzgcex8ypv0UpnuNhvpFKyw==
+"@nxg-org/mineflayer-util-plugin@^1.7.9":
+  version "1.7.9"
+  resolved "https://registry.yarnpkg.com/@nxg-org/mineflayer-util-plugin/-/mineflayer-util-plugin-1.7.9.tgz#4f71b961cba215b54c4d7c9e0b02dc3e285d2bb2"
+  integrity sha512-KGniVUnJcUdYkIcTxBv86BJWZv2ykSWsrhC/TuVkj2FtdfYj5bo/oD3OQH6CFww1V36FDol9Xr6PmC5/DgzExw==
 
 "@types/node@*":
   version "18.11.18"

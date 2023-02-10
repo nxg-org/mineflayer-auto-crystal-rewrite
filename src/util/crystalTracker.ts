@@ -77,8 +77,6 @@ export class CrystalTracker extends (EventEmitter as {
   public start() {
     this.bot.prependListener("entitySpawn", this.onEntitySpawn);
     this.bot.prependListener("entityGone", this.onEntityDestroy);
-    // this.bot.prependListener("entityDead", this.onEntityDestroy);
-    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
     this.bot.prependListener("hardcodedSoundEffectHeard", this.onSound);
     this.bot._client.prependListener("explosion", this.onExplosion);
   }
@@ -86,8 +84,6 @@ export class CrystalTracker extends (EventEmitter as {
   public stop() {
     this.bot.off("entitySpawn", this.onEntitySpawn);
     this.bot.off("entityGone", this.onEntityDestroy);
-    // this.bot.prependListener("entityDead", this.onEntityDestroy);
-    // this.bot.prependListener("entityUpdate", this.onEntityDestroy)
     this.bot.off("hardcodedSoundEffectHeard", this.onSound);
     this.bot._client.off("explosion", this.onExplosion);
     this.reset();
@@ -99,9 +95,6 @@ export class CrystalTracker extends (EventEmitter as {
     this._spawnedEntities.clear();
   }
 
-  public clearAttempts() {
-    this._attemptedPlacements.clear();
-  }
 
   public getAllPlacementSize() {
     let count = 0;
@@ -122,7 +115,7 @@ export class CrystalTracker extends (EventEmitter as {
   public getAllPlacementsBefore(latestTick: number) {
     let placements = new Set<string>();
     for (const [key, val] of this._attemptedPlacements.entries()) {
-      if (key <= latestTick) val.forEach((key) => {placements.add(key)});
+      if (key <= latestTick) val.forEach((key) => placements.add(key));
     }
     return placements;
   }
@@ -151,13 +144,13 @@ export class CrystalTracker extends (EventEmitter as {
       vec.push(new AABB(pos.x - 0.5, pos.y + 1, pos.z - 0.5, pos.x + 1.5, pos.y + 3, pos.z + 1.5));
     }
 
-    positions = this.getAllPlacementsBefore(this.currentTick).values();
-    while (!(info = positions.next()).done) {
-      const key = info.value;
-      if (this._fastModeKills.has(key)) continue;
-      const pos = strToVec3(info.value);
-      vec.push(new AABB(pos.x - 0.5, pos.y + 1, pos.z - 0.5, pos.x + 1.5, pos.y + 3, pos.z + 1.5));
-    }
+    // positions = this.getAllPlacementsBefore(this.currentTick).values();
+    // while (!(info = positions.next()).done) {
+    //   const key = info.value;
+    //   if (this._fastModeKills.has(key)) continue;
+    //   const pos = strToVec3(info.value);
+    //   vec.push(new AABB(pos.x - 0.5, pos.y + 1, pos.z - 0.5, pos.x + 1.5, pos.y + 3, pos.z + 1.5));
+    // }
 
     return vec;
   }
@@ -198,21 +191,18 @@ export class CrystalTracker extends (EventEmitter as {
     const posStr = pos.toString();
     let afterPlace = true;
     for (const [key, places] of Array.from(this._attemptedPlacements.entries()).reverse()) {
-  
       if (afterPlace) {
         if (places.has(posStr)) {
           places.delete(posStr);
-          this._spawnedEntities.set(posStr, entity);
+          this._spawnedEntities.set(entity.position.toString(), entity);
           afterPlace = false;
         }
-      } else {
-        // this._attemptedPlacements.delete(key); // all other placements should be invalidated now.
       }
     }
   };
 
   protected onEntityDestroy = (entity: Entity) => {
-    const posStr = entity.position.offset(-0.5, -1, -0.5).toString();
+    const posStr = entity.position.toString();
     if (this._spawnedEntities.has(posStr) || this._fastModeKills.has(posStr)) {
       // console.log(posStr, this._spawnedEntities.keys(), this._fastModeKills)
       this.emit("serverCrystalDestroyed", entity);
