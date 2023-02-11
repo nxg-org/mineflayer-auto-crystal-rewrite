@@ -10,19 +10,28 @@ import { Ctx, EntityRaycastReturn, PlaceType } from "../types";
 import { getAABBsFromOption } from "./utilBoth";
 
 export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType | false {
+  const checkBlocks = [];
+  for (let x = -0.3; x <= 0.3; x += 0.6) {
+    for (let z = -0.3; z <= 0.3; z += 0.6) {
+      checkBlocks.push(ctx.bot.entity.position.offset(x, -1, z).floor());
+    }
+  }
+  if (checkBlocks.some((pos) => pos.equals(blockPos))) return false;
+
   const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
-  const playerBBs = Object.values(ctx.bot.entities)
-    .filter((e) => e.type === "player")
-    .map(AABBUtils.getEntityAABB);
+  if (eyePos.distanceTo(blockPos) > ctx.options.placement.placeDistance) return false;
 
   const crystalBBs = getAABBsFromOption(ctx);
-
-  if (eyePos.distanceTo(blockPos) > ctx.options.placement.placeDistance) return false;
   const { x, y, z } = blockPos;
   const newCrystalBox = new AABB(x - 0.5, y + 1, z - 0.5, x + 1.5, y + 3, z + 1.5); //.expand(0.005, 0, 0.005);
   if (crystalBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
   newCrystalBox.expand(-0.5, 0, -0.5);
+
+  const playerBBs = Object.values(ctx.bot.entities)
+    .filter((e) => e.type === "player" && e.id !== ctx.bot.entity.id)
+    .map(AABBUtils.getEntityAABB);
   if (playerBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
+
   if (ctx.bot.blockAt(blockPos.offset(0, 1, 0))?.name !== "air") return false;
 
   const offset = blockPos.offset(0.5, 1, 0.5);
@@ -31,6 +40,8 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
   if (ctx.options.placement.minDamage > 0) {
     if (dmg < ctx.options.placement.minDamage) return false;
   }
+
+
 
   if (ctx.options.placement.raycast) {
     let placeRef = new Vec3(0, 1, 0);
@@ -43,7 +54,7 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
         ctx.options.placement.placeDistance
       );
       if (rayBlock === null) {
-        console.log("null")
+        console.log("null");
         continue;
       }
       if (!rayBlock.position.equals(blockPos)) {
@@ -61,21 +72,29 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
 
 export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
   const playerBBs = Object.values(ctx.bot.entities)
-    .filter((e) => e.type === "player")
+    .filter((e) => e.type === "player" && e.id !== ctx.bot.entity.id)
     .map(AABBUtils.getEntityAABB);
 
   const crystalBBs = getAABBsFromOption(ctx);
 
   const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
-  const blockInfoFunc = (pos: Vec3) => {
-    if (eyePos.distanceTo(pos) > ctx.options.placement.placeDistance) return false;
-    const { x, y, z } = pos;
+  const checkBlocks: Vec3[] = [];
+  for (let x = -0.3; x <= 0.3; x += 0.6) {
+    for (let z = -0.3; z <= 0.3; z += 0.6) {
+      checkBlocks.push(ctx.bot.entity.position.offset(x, -1, z).floor());
+    }
+  }
+  const blockInfoFunc = (blockPos: Vec3) => {
+    if (checkBlocks.some((pos) => pos.equals(blockPos))) return false;
+    if (eyePos.distanceTo(blockPos) > ctx.options.placement.placeDistance) return false;
+
+    const { x, y, z } = blockPos;
     const newCrystalBox = new AABB(x - 0.5, y + 1, z - 0.5, x + 1.5, y + 3, z + 1.5); //.expand(0.005, 0, 0.005);
     if (crystalBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
     newCrystalBox.expand(-0.5, 0, -0.5);
     if (playerBBs.filter((aabb) => aabb.intersects(newCrystalBox)).length !== 0) return false;
 
-    return ctx.bot.blockAt(pos.offset(0, 1, 0))?.name === "air";
+    return ctx.bot.blockAt(blockPos.offset(0, 1, 0))?.name === "air";
   };
 
   const findBlocksNearPoint = entity.position; // .plus(entity.velocity);
@@ -86,8 +105,10 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     count: 50,
   });
 
-  const bbs: {[id: string]: AABB} = {};
-  Object.values(ctx.bot.entities).filter(e=>e.type==="player" && e.id !== ctx.bot.entity.id).forEach(e=>bbs[e.id] = AABBUtils.getEntityAABB(e))
+  const bbs: { [id: string]: AABB } = {};
+  Object.values(ctx.bot.entities)
+    .filter((e) => e.type === "player" && e.id !== ctx.bot.entity.id)
+    .forEach((e) => bbs[e.id] = AABBUtils.getEntityAABB(e));
   const defaultPlaceRef = new Vec3(0, 1, 0);
   const raycastFunc = (loc: Vec3): PlaceType | null => {
     let placeRef = new Vec3(0, 1, 0);
@@ -95,7 +116,7 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     checkPts.unshift(loc.offset(0.5, 1, 0.5));
     for (const rayPos of checkPts) {
       const rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
-      // const rayBlock = ctx.bot.world.raycast(
+        // const rayBlock = ctx.bot.world.raycast(
         eyePos,
         rayPos.minus(eyePos).normalize(),
         bbs,
@@ -105,6 +126,11 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
       if (rayBlock === null) {
         continue;
       }
+
+      if ((rayBlock as any).entityType) {
+        console.log(rayBlock);
+      }
+
       if (!rayBlock.position.equals(loc)) {
         continue;
       }
@@ -118,7 +144,6 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
 
   blocks = blocks.filter(blockInfoFunc);
 
- 
   if (ctx.options.placement.raycast) {
     return blocks.map(raycastFunc).filter((bl) => bl !== null) as PlaceType[];
   } else {

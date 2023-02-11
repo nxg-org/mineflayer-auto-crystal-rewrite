@@ -61,6 +61,7 @@ export const DefaultOptions: AutoCrystalOptions = {
     stagger: true,
     staggerDelay: 50,
     raycast: false,
+    ncpRaytrace: false,
     placementPriority: "damage",
     minDamage: 0,
     placesPerTry: 1,
