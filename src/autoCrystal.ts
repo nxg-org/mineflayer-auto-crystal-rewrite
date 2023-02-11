@@ -13,8 +13,8 @@ import { shouldAttemptAttack } from "./util/utilBreaking";
 export interface AutoCrystalOptions {
   placeAndBreak: boolean;
   tpsSync:
-    | { enabled: false; placeDelay: number; breakDelay: number }
-    | { enabled: true; placeTicks: number; breakTicks: number };
+    | { enabled: false; placeDelay: number; breakDelay: number, breakCrystalAge: number, breakWaitTimeout: number; }
+    | { enabled: true; placeTicks: number; breakTicks: number,  breakCrystalTicks: number, breakTickTimeout: number; };
   positionLookup: {
     async: boolean;
     positionCount: number;
@@ -44,7 +44,6 @@ export interface AutoCrystalOptions {
     useOffhand: boolean;
   } & ({ stagger: false } | { stagger: true; staggerDelay: number });
   breaking: {
-    breakWaitTimeout: number;
     hitAll: boolean;
     minDamage: number;
     rotate: boolean;
@@ -61,7 +60,7 @@ export class AutoCrystal extends EventEmitter {
   public readonly placeableBlocks = new Set<number>();
 
   public options: AutoCrystalOptions;
-  public readonly placer: CrystalTracker;
+  public readonly tracker: CrystalTracker;
   private _target?: Entity;
   private positions: PlaceType[] = [];
   private running = false;
@@ -78,7 +77,7 @@ export class AutoCrystal extends EventEmitter {
 
   constructor(public readonly bot: Bot, options: DeepPartial<AutoCrystalOptions> = {}) {
     super();
-    this.placer = new CrystalTracker(bot, options.crystalTrackerOptions);
+    this.tracker = new CrystalTracker(bot, options.crystalTrackerOptions);
     this.options = merge({}, DefaultOptions, options as AutoCrystalOptions);
     this.placeableBlocks.add(bot.registry.blocksByName.obsidian.id);
     this.placeableBlocks.add(bot.registry.blocksByName.bedrock.id);
@@ -96,7 +95,7 @@ export class AutoCrystal extends EventEmitter {
   public stop() {
     this.running = false;
     this._target = undefined;
-    this.placer.stop();
+    this.tracker.stop();
     this.bot.off("entitySpawn", this.onEntitySpawn);
     this.bot.off("physicsTick", this.onLocalTick);
     this.bot._client.off("explosion", this.onExplosion);
@@ -106,7 +105,7 @@ export class AutoCrystal extends EventEmitter {
     if (this.running) return;
     if (!this._target && !entity) return;
     if (!this._target) this._target = entity;
-    this.placer.start();
+    this.tracker.start();
     this.running = true;
     if (this.options.tpsSync.enabled) {
     } else {
@@ -128,7 +127,7 @@ export class AutoCrystal extends EventEmitter {
         if (botChecker(e)) {
           this.bot.off("entityMoved", botListener);
           this.bot.off("entitySpawn", crystalListener);
-          this.placer.off("serverCrystalDestroyed", crystalListener);
+          this.tracker.off("serverCrystalDestroyed", crystalListener);
           res(undefined);
         }
       };
@@ -136,13 +135,13 @@ export class AutoCrystal extends EventEmitter {
       const crystalListener = (...args: any[]) => {
         this.bot.off("entityMoved", botListener);
         this.bot.off("entitySpawn", crystalListener);
-        this.placer.off("serverCrystalDestroyed", crystalListener);
+        this.tracker.off("serverCrystalDestroyed", crystalListener);
         res(undefined);
       };
 
       this.bot.on("entityMoved", botListener);
       this.bot.on("entitySpawn", crystalListener);
-      this.placer.on("serverCrystalDestroyed", crystalListener);
+      this.tracker.on("serverCrystalDestroyed", crystalListener);
     });
   };
 
@@ -182,7 +181,7 @@ export class AutoCrystal extends EventEmitter {
 
   protected onEntitySpawn = async (entity: Entity) => {
     if (!this._target) return;
-    if (entity.entityType === this.placer.endCrystalType) {
+    if (entity.entityType === this.tracker.endCrystalType) {
       if (!this.options.placeAndBreak) {
         this.toBreak.push(entity);
         this.shouldBreak = true;
@@ -199,7 +198,7 @@ export class AutoCrystal extends EventEmitter {
           const maxDmg = Math.max(...dmgs);
           if (posInfo.dmg >= maxDmg) {
             //posInfo.dmg > minDmg ||
-            this.placer.addPlacement(blockPos);
+            this.tracker.addPlacement(blockPos);
             this.placeCrystal(posInfo);
           }
         }
@@ -213,7 +212,7 @@ export class AutoCrystal extends EventEmitter {
     const pos = new Vec3(packet.x - 0.5, packet.y - 1, packet.z - 0.5);
     const check = isPosGood(this, this._target, pos);
     if (check) {
-      this.placer.addPlacement(pos);
+      this.tracker.addPlacement(pos);
       this.placeCrystal(check);
     }
   };
@@ -231,21 +230,21 @@ export class AutoCrystal extends EventEmitter {
       }
 
       if (this.positions.length === 0) {
-        console.log("zero pos?????", this.placer._attemptedPlacements);
+        console.log("zero pos?????", this.tracker._attemptedPlacements);
         await this.tickForPosUpdate();
         continue;
       }
 
       if (this.shouldBreak && !this.options.placeAndBreak) {
         console.log("waiting??");
-        await this.waitForCrystalBreakOr(this.options.breaking.breakWaitTimeout);
+        await this.waitForCrystalBreakOr(this.options.tpsSync.breakWaitTimeout);
       }
       // const now = performance.now();
       // console.log("place loop", now - time)
       // time = now;
 
 
-      console.log(this.positions)
+      // console.log(this.positions)
       /**
        * Note: NCP aim check seems to be bypassable so long as, at the end of the current tick,
        * Your aim is back to where it was before the tick started.
@@ -273,9 +272,9 @@ export class AutoCrystal extends EventEmitter {
       for (let i = 0; i < breakLim && i < this.positions!.length; i++) {
         const p = this.positions[i];
         // console.log(p, i, this.tracker.canPlace(p))
-        if (this.placer.canPlace(p)) {
+        if (this.tracker.canPlace(p)) {
           finalPlacements[i % (staggerFlag ? 2 : 1)].push(p);
-          this.placer.addPlacement(p.block);
+          this.tracker.addPlacement(p.block);
           if (this.options.placement.stagger) staggerFlag = !staggerFlag;
         } else if (this.options.placement.useBackupPositions) breakLim++;
       }
@@ -327,10 +326,10 @@ export class AutoCrystal extends EventEmitter {
       } else {
         // console.log("DONT HAVE TO BREAK")
         let entities = Object.values(this.bot.entities).filter(
-          (e) => e.entityType === this.placer.endCrystalType && e.isValid
+          (e) => e.entityType === this.tracker.endCrystalType && e.isValid
         );
         entities = entities.filter((e) => shouldAttemptAttack(this, this._target!, e));
-        entities = entities.filter((e) => this.placer.shouldBreak(e.position));
+        entities = entities.filter((e) => this.tracker.shouldBreak(e.position));
         let target: Entity | undefined;
         while (!!(target = entities.pop())) {
           tasks.push(this.breakCrystal(target));
@@ -374,7 +373,7 @@ export class AutoCrystal extends EventEmitter {
 
   public breakCrystal = async (info: Entity) => {
     if (!this.target) return;
-    if (info.entityType !== this.placer.endCrystalType) return;
+    if (info.entityType !== this.tracker.endCrystalType) return;
     if (!this.bot.entities[info.id]) return;
 
     const npw = performance.now();
@@ -430,19 +429,23 @@ export class AutoCrystal extends EventEmitter {
     }
 
     if (this.bot.entities[hitId]?.isValid) {
-      await new Promise((res, rej) => {
-        const listener = (entity: Entity) => {
-          if (entity.id === hitId) {
+
+      if (!this.options.tpsSync.enabled) {
+        await new Promise((res, rej) => {
+          const listener = (entity: Entity) => {
+            if (entity.id === hitId) {
+              this.bot.off("entityGone", listener);
+              res(undefined);
+            }
+          };
+          this.bot.on("entityGone", listener);
+          sleep((this.options.tpsSync as any).breakWaitTimeout).then(() => {
             this.bot.off("entityGone", listener);
             res(undefined);
-          }
-        };
-        this.bot.on("entityGone", listener);
-        sleep(this.options.breaking.breakWaitTimeout).then(() => {
-          this.bot.off("entityGone", listener);
-          res(undefined);
+          });
         });
-      });
+      }
+      
     }
 
     return;

@@ -4,7 +4,7 @@ import type { Vec3 } from "vec3";
 import type { BlockFace } from "@nxg-org/mineflayer-util-plugin";
 import { Bot } from "mineflayer";
 import { CrystalTracker } from "./util/crystalTracker";
-import { AutoCrystalOptions } from "./autoCrystal";
+import { AutoCrystal, AutoCrystalOptions } from "./autoCrystal";
 
 export type genericPlaceOptions = {
   half?: "top" | "bottom";
@@ -25,4 +25,5 @@ export type EntityRaycastReturn = (Block | Entity) & { intersect: Vec3; face: Bl
 
 export type PlaceType = { block: Vec3; lookHere: Vec3; placeRef: Vec3; dmg: number };
 
-export type Ctx = { bot: Bot; placer: CrystalTracker; options: AutoCrystalOptions };
+// export type Ctx = { bot: Bot; placer: CrystalTracker; options: AutoCrystalOptions };
+export type Ctx = AutoCrystal;

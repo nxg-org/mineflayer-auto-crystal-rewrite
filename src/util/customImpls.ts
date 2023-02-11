@@ -229,7 +229,7 @@ export function customAttackImpl(bot: Bot) {
   }
 
   function attack(target: { id: number }, swing = true, offhand = false) {
-    console.log("attacking!");
+
     // arm animation comes before the use_entity packet on 1.8
     if (bot.supportFeature("armAnimationBeforeUse")) {
       if (swing) {

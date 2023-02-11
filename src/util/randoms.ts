@@ -38,6 +38,8 @@ export const DefaultOptions: AutoCrystalOptions = {
     enabled: false,
     placeDelay: 50,
     breakDelay: 50,
+    breakWaitTimeout: 50,
+    breakCrystalAge: 50,
   },
   positionLookup: {
     async: true,
@@ -76,7 +78,6 @@ export const DefaultOptions: AutoCrystalOptions = {
     breakDistance: 5,
     triesPerCrystal: 2,
     delayBetweenTries: 25,
-    breakWaitTimeout: 200,
     raytrace: false,
     swingArm: false,
     useOffhand: false,

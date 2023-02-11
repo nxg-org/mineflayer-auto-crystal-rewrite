@@ -6,17 +6,17 @@ export function getAABBsFromOption(ctx: Ctx) {
     switch (ctx.options.positionLookup.aabbCheck) {
       case "all":
         crystalBBs = Object.values(ctx.bot.entities)
-          .filter((e) => e.entityType === ctx.placer.endCrystalType)
+          .filter((e) => e.entityType === ctx.tracker.endCrystalType)
           .map(AABBUtils.getEntityAABB);
-        crystalBBs.push(...ctx.placer.getAllEntityAABBs());
+        crystalBBs.push(...ctx.tracker.getAllEntityAABBs());
         break;
       case "actual":
         crystalBBs = Object.values(ctx.bot.entities)
-          .filter((e) => e.entityType === ctx.placer.endCrystalType)
+          .filter((e) => e.entityType === ctx.tracker.endCrystalType)
           .map(AABBUtils.getEntityAABB);
         break;
       case "predictive":
-        crystalBBs = ctx.placer.getAllEntityAABBs();
+        crystalBBs = ctx.tracker.getAllEntityAABBs();
         break;
       case "none":
         crystalBBs = [];

@@ -101,12 +101,12 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     return ctx.bot.blockAt(blockPos.offset(0, 1, 0))?.name === "air";
   };
 
-  const findBlocksNearPoint = entity.position; // .plus(entity.velocity);
+  const findBlocksNearPoint = entity.position.offset(0, -1, 0); // .plus(entity.velocity);
   let blocks = ctx.bot.customLookup.findBlocks({
     point: findBlocksNearPoint,
     matching: [ctx.bot.registry.blocksByName.obsidian.id, ctx.bot.registry.blocksByName.bedrock.id],
     maxDistance: ctx.options.placement.placeDistance + 2,
-    count: 50,
+    count: 500,
   });
 
   const bbs: { [id: string]: AABB } = {};
