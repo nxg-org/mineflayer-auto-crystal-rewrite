@@ -33,7 +33,7 @@ export function blockFaceToVec(face: BlockFace) {
 }
 
 export const DefaultOptions: AutoCrystalOptions = {
-  placeAndBreak: true,
+  placeAndBreak: false,
   tpsSync: {
     enabled: false,
     placeDelay: 50,
@@ -53,7 +53,6 @@ export const DefaultOptions: AutoCrystalOptions = {
     deletePlacementsAfter: 2,
   },
   placement: {
-    breakWaitTimeout: 200,
     predictOnBreak: false,
     predictOnExplosion: false,
     careAboutPastPlacements: false,
@@ -77,6 +76,7 @@ export const DefaultOptions: AutoCrystalOptions = {
     breakDistance: 5,
     triesPerCrystal: 2,
     delayBetweenTries: 25,
+    breakWaitTimeout: 200,
     raytrace: false,
     swingArm: false,
     useOffhand: false,

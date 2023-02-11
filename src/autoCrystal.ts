@@ -30,7 +30,6 @@ export interface AutoCrystalOptions {
     deletePlacementsAfter: number;
   };
   placement: {
-    breakWaitTimeout: number;
     predictOnBreak: boolean;
     predictOnExplosion: boolean;
     careAboutPastPlacements: boolean;
@@ -45,6 +44,7 @@ export interface AutoCrystalOptions {
     useOffhand: boolean;
   } & ({ stagger: false } | { stagger: true; staggerDelay: number });
   breaking: {
+    breakWaitTimeout: number;
     hitAll: boolean;
     minDamage: number;
     rotate: boolean;
@@ -237,10 +237,8 @@ export class AutoCrystal extends EventEmitter {
       }
 
       if (this.shouldBreak && !this.options.placeAndBreak) {
-        const now = performance.now();
-        await this.waitForCrystalBreakOr(this.options.placement.breakWaitTimeout);
-        const after = performance.now();
-        console.log("breaking took:", after - now);
+        console.log("waiting??");
+        await this.waitForCrystalBreakOr(this.options.breaking.breakWaitTimeout);
       }
       // const now = performance.now();
       // console.log("place loop", now - time)
@@ -321,7 +319,7 @@ export class AutoCrystal extends EventEmitter {
           if (!this.options.breaking.hitAll) {
             const before = this.toBreak.length;
             this.toBreak = this.toBreak.filter(filterFunc);
-            // console.log( "before:", before, "after sort:", this.toBreak.length,)
+            console.log("before:", before, "after sort:", this.toBreak.length);
           }
         }
       } else {
@@ -343,8 +341,9 @@ export class AutoCrystal extends EventEmitter {
       }
 
       await Promise.all(tasks);
-      this.shouldBreak = false;
+
       this.emit("brokeCrystals", broken);
+      this.shouldBreak = false;
       await sleep(this.options.tpsSync.breakDelay);
     }
   };
@@ -390,7 +389,7 @@ export class AutoCrystal extends EventEmitter {
     }
 
     // if (!hitLook.equals(naiveHit)) console.log("hitting", hitId, "with", hitLook, "instead of", naiveHit);
-    let shouldWait = true;
+
     for (let i = 0; i < this.options.breaking.triesPerCrystal; i++) {
       // if (this.breaksThisTick++ > this.options.breaking.breaksPerTry) return "max tries";
 
@@ -415,7 +414,6 @@ export class AutoCrystal extends EventEmitter {
         await new Promise((res, rej) => {
           const listener = (entity: Entity) => {
             if (entity.id === hitId) {
-              shouldWait = false;
               this.bot.off("entityGone", listener);
               res(undefined);
             }
@@ -429,7 +427,7 @@ export class AutoCrystal extends EventEmitter {
       }
     }
 
-    if (shouldWait) {
+    if (this.bot.entities[hitId]?.isValid) {
       await new Promise((res, rej) => {
         const listener = (entity: Entity) => {
           if (entity.id === hitId) {
@@ -438,12 +436,13 @@ export class AutoCrystal extends EventEmitter {
           }
         };
         this.bot.on("entityGone", listener);
-        sleep(this.options.placement.breakWaitTimeout).then(() => {
+        sleep(this.options.breaking.breakWaitTimeout).then(() => {
           this.bot.off("entityGone", listener);
           res(undefined);
         });
       });
     }
+
     return;
   };
 
