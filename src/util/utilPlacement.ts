@@ -13,7 +13,9 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
   const checkBlocks = [];
   for (let x = -0.3; x <= 0.3; x += 0.6) {
     for (let z = -0.3; z <= 0.3; z += 0.6) {
-      checkBlocks.push(ctx.bot.entity.position.offset(x, -1, z).floor());
+      for (let y = -2; y <= 0; y++) {
+        checkBlocks.push(ctx.bot.entity.position.offset(x, y, z).floor());
+      }
     }
   }
   if (checkBlocks.some((pos) => pos.equals(blockPos))) return false;
@@ -81,7 +83,9 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
   const checkBlocks: Vec3[] = [];
   for (let x = -0.3; x <= 0.3; x += 0.6) {
     for (let z = -0.3; z <= 0.3; z += 0.6) {
-      checkBlocks.push(ctx.bot.entity.position.offset(x, -1, z).floor());
+      for (let y = -2; y <= 0; y++) {
+        checkBlocks.push(ctx.bot.entity.position.offset(x, y, z).floor());
+      }
     }
   }
   const blockInfoFunc = (blockPos: Vec3) => {
@@ -115,11 +119,11 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     const checkPts = AABB.fromBlock(loc).toVertices().reverse();
     checkPts.unshift(loc.offset(0.5, 1, 0.5));
     for (const rayPos of checkPts) {
-      const rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
-        // const rayBlock = ctx.bot.world.raycast(
+      // const rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
+        const rayBlock = ctx.bot.world.raycast(
         eyePos,
         rayPos.minus(eyePos).normalize(),
-        bbs,
+        // bbs,
         ctx.options.placement.placeDistance
       );
 

@@ -244,6 +244,8 @@ export class AutoCrystal extends EventEmitter {
       // console.log("place loop", now - time)
       // time = now;
 
+
+      console.log(this.positions)
       /**
        * Note: NCP aim check seems to be bypassable so long as, at the end of the current tick,
        * Your aim is back to where it was before the tick started.
@@ -314,7 +316,7 @@ export class AutoCrystal extends EventEmitter {
 
         while (!!(target = this.toBreak.pop())) {
           tasks.push(this.breakCrystal(target));
-          // target.isValid = false;
+          target.isValid = false;
           broken.push(target);
           if (!this.options.breaking.hitAll) {
             const before = this.toBreak.length;
@@ -332,7 +334,7 @@ export class AutoCrystal extends EventEmitter {
         let target: Entity | undefined;
         while (!!(target = entities.pop())) {
           tasks.push(this.breakCrystal(target));
-          // target.isValid = false;
+          target.isValid = false;
           broken.push(target);
           if (!this.options.breaking.hitAll) {
             entities = entities.filter(filterFunc);
