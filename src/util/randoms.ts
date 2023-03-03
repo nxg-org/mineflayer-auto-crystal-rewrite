@@ -1,3 +1,4 @@
+
 import { AutoCrystalOptions } from "../autoCrystal";
 import type { Bot, BotEvents } from "mineflayer";
 import type { Entity } from "prismarine-entity";
@@ -36,33 +37,32 @@ export const DefaultOptions: AutoCrystalOptions = {
   placeAndBreak: false,
   tpsSync: {
     enabled: false,
-    placeDelay: 50,
-    breakDelay: 50,
+    placeSleep: 50,
+    breakSleep: 50,
     breakWaitTimeout: 50,
     breakCrystalAge: 50,
   },
   positionLookup: {
     async: true,
     positionCount: 2,
-    aabbCheck: "actual",
+    aabbCheck: "none",
   },
   crystalTrackerOptions: {
     fastModes: {
       sound: true,
       explosion: true,
     },
-    careAboutPastPlacements: true,
+    careAboutPastPlaceAttempts: true,
     deletePlacementsAfter: 2,
   },
   placement: {
+    skipPosIfCrystalThere: true,
     predictOnBreak: false,
     predictOnExplosion: false,
-    careAboutPastPlacements: false,
-    rotate: true,
     stagger: true,
     staggerDelay: 50,
-    raycast: false,
-    ncpRaytrace: false,
+    raycast: true,
+    entityRaycast: false,
     placementPriority: "damage",
     minDamage: 0,
     placesPerTry: 1,
@@ -71,18 +71,24 @@ export const DefaultOptions: AutoCrystalOptions = {
     useOffhand: false,
   },
   breaking: {
-    hitAll: true,
+    predictOnSpawn: false,
+    hitAll: false,
     minDamage: 0,
-    rotate: true,
     breaksPerTry: 1,
     breakDistance: 5,
     triesPerCrystal: 2,
     delayBetweenTries: 25,
     raytrace: false,
-    swingArm: false,
-    useOffhand: false,
-    
+    swingArm: true,
+    offhandSwing: false,
+    offhandAttack: false,
   },
+  rotation: {
+    placement: true,
+    breaking: true,
+    lookDotThreshhold: 1.01,
+    dontRotateIfCrystalAABBHit: false
+  }
 } as const;
 
 export const sleep = (ms: number) => new Promise((res, rej) => setTimeout(res, ms));

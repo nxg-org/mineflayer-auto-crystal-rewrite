@@ -25,5 +25,7 @@ export type EntityRaycastReturn = (Block | Entity) & { intersect: Vec3; face: Bl
 
 export type PlaceType = { block: Vec3; lookHere: Vec3; placeRef: Vec3; dmg: number };
 
+export type BreakType = { lookHere: Vec3; id: number };
+
 // export type Ctx = { bot: Bot; placer: CrystalTracker; options: AutoCrystalOptions };
 export type Ctx = AutoCrystal;

@@ -183,7 +183,7 @@ export function customDamageInject(bot: Bot) {
 
     const exposure = calcExposureAABB(AABBUtils.getEntityAABB(targetEntity), sourcePos, bot.world);
     const impact = (1 - distance / radius) * exposure;
-    let damages = Math.floor((impact * impact + impact) * damageMultiplier * power + 1);
+    let damages = (impact * impact + impact) * damageMultiplier * power + 1;
     // The following modifiers are constant for the input targetEntity and doesnt depend
     // on the source position, so if the goal is to compare between positions they can be
     // ignored to save computations
@@ -202,10 +202,11 @@ export function customDamageInject(bot: Bot) {
         damages *= difficultyValues[bot.game.difficulty] * 0.5;
       }
     } else if (!rawDamages && !targetEntity.attributes[armorProtectionKey]) {
+      console.log(targetEntity.attributes)
       return null;
     }
-    return Math.floor(damages);
-  };
+    return damages;
+  }
 
   bot.getExplosionDamagesAABB = (targetBB: AABB, sourcePos: Vec3, power: number) => {
     const distance = targetBB.distanceToVec(sourcePos);
@@ -214,7 +215,7 @@ export function customDamageInject(bot: Bot) {
 
     const exposure = calcExposureAABB(targetBB, sourcePos, bot.world);
     const impact = (1 - distance / radius) * exposure;
-    return Math.floor((impact * impact + impact) * damageMultiplier * power + 1);
+    return (impact * impact + impact) * damageMultiplier * power + 1;
   };
 }
 
@@ -280,101 +281,27 @@ export class CustomLookup {
     this.visitedColumns.clear();
   };
 
-  findBlocks = (options: FindBlockOptions & { matching: number[] }) => {
+  fasterFindBlocks = (options: FindBlockOptions & { matching: number[] }) => {
     const matcher = this.getMatchingFunction(options.matching);
     const point = (options.point || this.bot.entity.position).floored();
     const maxDistance = options.maxDistance || 16;
     const count = options.count || 1;
     const useExtraInfo = options.useExtraInfo || false;
     const fullMatcher = this.getFullMatchingFunction(matcher, useExtraInfo);
-    const start = new Vec3(Math.floor(point.x / 16), Math.floor(point.y / 16), Math.floor(point.z / 16));
-    const it = new OctahedronIterator(start, Math.ceil((maxDistance + 8) / 16));
-    // the octahedron iterator can sometime go through the same section again
-    // we use a set to keep track of visited sections
-    const visitedSections = new Set();
-
-    let blocks = [];
-    let startedLayer = 0;
-    let next = start;
-    let tick = 0;
-
-    while (next) {
-      const column = this.bot.world.getColumn(next.x, next.z);
-      // const nextColStr = `${next.x},${next.z}`;
-      // if (!this.visitedColumns.has(nextColStr))
-      //   this.visitedColumns.set(nextColStr, this.bot.world.getColumn(next.x, next.z));
-      // const column = this.visitedColumns.get(nextColStr);
-      const sectionY = next.y + Math.abs((this.bot.game as any).minY >> 4);
-      const totalSections = (this.bot.game as any).height >> 4;
-      if (sectionY >= 0 && sectionY < totalSections && column && !visitedSections.has(next.toString())) {
-        const section = column.sections[sectionY];
-        if (useExtraInfo === true || this.isBlockInSection(section, matcher)) {
-          const begin = new Vec3(next.x * 16, sectionY * 16 + (this.bot.game as any).minY, next.z * 16);
-          const cursor = begin.clone();
-          const end = cursor.offset(16, 16, 16);
-
-          // console.log(begin, point, end, this.between(begin, point, end));
-          // if (this.between(begin, point, end)) {
-          if (false) {
-            let yOff = 0;
-            let yNeg = false;
-            for (cursor.y = point.y; begin.y <= cursor.y && cursor.y < end.y; ) {
-              let xOff = 0;
-              let xNeg = false;
-              for (cursor.x = point.x; begin.x <= cursor.x && cursor.x < end.x; ) {
-                let zOff = 0;
-                let zNeg = false;
-                for (cursor.z = point.z; begin.z <= cursor.z && cursor.z < end.z; ) {
-                  // tick++;
-                  // console.log(cursor)
-                  if (fullMatcher(cursor) && cursor.distanceTo(point) <= maxDistance) {
-                    blocks.push(cursor.clone());
-                  }
-                  zOff += 1;
-                  zNeg = !zNeg;
-                  cursor.z += zNeg ? -zOff : zOff;
-                }
-                xOff += 1;
-                xNeg = !xNeg;
-                cursor.x += xNeg ? -xOff : xOff;
-              }
-              yOff += 1;
-              yNeg = !yNeg;
-              cursor.y += yNeg ? -yOff : yOff;
-            }
-          } else {
-            for (cursor.y = begin.y; cursor.y < end.y; cursor.y++) {
-              for (cursor.x = begin.x; cursor.x < end.x; cursor.x++) {
-                for (cursor.z = begin.z; cursor.z < end.z; cursor.z++) {
-                  // tick++;
-                  if (fullMatcher(cursor) && cursor.distanceTo(point) <= maxDistance) {
-                    blocks.push(cursor.clone());
-                  }
-                }
-              }
-            }
+    const cursor = point.clone();
+    const blocks = [];
+    const begin = cursor.offset(-maxDistance, -maxDistance, -maxDistance)
+    const end = cursor.offset(maxDistance, maxDistance, maxDistance);
+    for (cursor.y = begin.y; cursor.y < end.y; cursor.y++) {
+      for (cursor.x = begin.x; cursor.x < end.x; cursor.x++) {
+        for (cursor.z = begin.z; cursor.z < end.z; cursor.z++) {
+          // tick++;
+          
+          if (fullMatcher(cursor) && cursor.distanceTo(point) <= maxDistance) {
+            blocks.push(cursor.clone());
           }
-
-          // for (cursor.y = begin.y; cursor.y < end.y; cursor.y++) {
-          //   for (cursor.x = begin.x; cursor.x < end.x; cursor.x++) {
-          //     for (cursor.z = begin.z; cursor.z < end.z; cursor.z++) {
-          //       tick++;
-          //       if (cursor.distanceTo(point) <= maxDistance) {
-          //         blocks.push(cursor.clone());
-          //       }
-          //     }
-          //   }
-          // }
         }
-        visitedSections.add(next.toString());
       }
-
-      // If we started a layer, we have to finish it otherwise we might miss closer blocks
-      if (startedLayer !== it.apothem && blocks.length >= count) {
-        break;
-      }
-      startedLayer = it.apothem;
-      next = it.next();
     }
 
     // console.log(tick)
@@ -383,7 +310,7 @@ export class CustomLookup {
     });
     // We found more blocks than needed, shorten the array to not confuse people
     if (blocks.length > count) {
-      blocks = blocks.slice(0, count);
+      return blocks.slice(0, count);
     }
     return blocks;
   };
@@ -421,7 +348,7 @@ export class CustomLookup {
 
   getFullMatchingFunction = (matcher: any, useExtraInfo: any) => {
     const nonFullSearchMatcher = (point: any) => {
-      const block = this.bot.blockAt(point, true);
+      const block = this.PBlock.fromStateId(this.bot.world.getBlockStateId(point), 0);
       return matcher(block) && useExtraInfo(block);
     };
 

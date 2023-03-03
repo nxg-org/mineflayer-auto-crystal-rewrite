@@ -185,9 +185,21 @@ export class CrystalTracker extends (EventEmitter as {
     }
   }
 
-  public canPlace(pos: PlaceType) {
-    const posStr = pos.block.toString();
-    return (this.options.careAboutPastPlacements && !this.alreadyPlaced(posStr)) || this._fastModeKills.has(pos.block.offset(0.5, 1, 0.5).toString());
+  public canPlace = (pos: PlaceType) => {
+    const blockStr = pos.block.toString();
+    const posStr = pos.block.offset(0.5, 1, 0.5).toString();
+    const spawnedCheck = this._spawnedEntities.has(posStr);
+    const fastCheck = this._fastModeKills.has(posStr);
+    if (spawnedCheck && !fastCheck) return false;
+    const prevAttemptedCheck = this.options.careAboutPastPlaceAttempts || !this.alreadyPlaced(blockStr);
+    return prevAttemptedCheck 
+    
+  }
+
+  public canPlaceAtEntity = (entity: Entity) => {
+    const blockStr = entity.position.offset(-0.5, -1, -0.5).toString();
+    const posStr = entity.position.toString();
+    return (this.options.careAboutPastPlaceAttempts || !this.alreadyPlaced(blockStr)) || this._fastModeKills.has(posStr);
   }
 
   public shouldBreak(pos: Vec3) {
@@ -201,17 +213,13 @@ export class CrystalTracker extends (EventEmitter as {
 
   protected onEntitySpawn = (entity: Entity) => {
     if (entity.entityType !== this.endCrystalType) return;
-    const pos = entity.position.offset(-0.5, -1, -0.5);
-    const posStr = pos.toString();
-    let afterPlace = true;
+    const blockStr = entity.position.offset(-0.5, -1, -0.5).toString();
     for (const [key, places] of Array.from(this._attemptedPlacements.entries()).reverse()) {
-      if (afterPlace) {
-        if (places.has(posStr)) {
-          places.delete(posStr);
+        if (places.has(blockStr)) {
+          places.delete(blockStr);
           this._spawnedEntities.set(entity.position.toString(), entity);
-          afterPlace = false;
+          break;
         }
-      }
     }
   };
 
@@ -256,7 +264,7 @@ export class CrystalTracker extends (EventEmitter as {
    */
   protected onSound = async (soundId: number, soundCategory: number, pt: Vec3, volume: number, pitch: number) => {
     if (!this.options.fastModes.sound) return;
-    // console.log("sound", soundId, soundCategory);
+    // console.log("sound", soundId, soundCategory, pt, Object.values(this.bot.entities).filter(e=>e.position.distanceTo(pt) < 1).map(e=>[e.name, e.position]));
     this.checkDmg("sound", pt, pt);
     let vals = this._spawnedEntities.keys();
     let pos: IteratorResult<string, undefined>;

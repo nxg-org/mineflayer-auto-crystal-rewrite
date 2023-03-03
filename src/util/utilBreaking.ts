@@ -5,24 +5,22 @@ import { AutoCrystalOptions } from "../autoCrystal";
 import { CrystalTracker } from "./crystalTracker";
 import { AABB, AABBUtils } from "@nxg-org/mineflayer-util-plugin";
 import { isRaycastEntity } from "./randoms";
-import { Ctx } from "../types";
+import { BreakType, Ctx } from "../types";
 
-export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): { lookHere: Vec3; id: number } | false {
+export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): BreakType | false {
   if (crystal.entityType !== ctx.tracker.endCrystalType) return false;
   if (!ctx.bot.entities[crystal.id]) return false;
-  
-  if (ctx.bot.util.entity.eyeDistanceToEntity(crystal) > ctx.options.breaking.breakDistance) return false;
 
-  const naiveHit = crystal.position.offset(0, 1.95, 0);
-  let hitLook: Vec3 | null = naiveHit;
+  if (ctx.bot.util.entity.eyeDistanceToEntity(crystal) > ctx.options.breaking.breakDistance + 1) return false;
+  let hitLook: Vec3 | null = crystal.position;
   let hitId: number = crystal.id;
-  
+
   if (ctx.options.breaking.raytrace) {
     hitLook = null;
     const players: { [id: string]: AABB } = {};
     const eyePos = ctx.bot.entity.position.offset(0, ctx.bot.entity.height, 0);
-    const checkPts = AABBUtils.getEntityAABB(crystal).toVertices();
-    checkPts.unshift(naiveHit);
+    const aabb = AABBUtils.getEntityAABB(crystal);
+    const checkPts = aabb.toVertices();
     checkPts.unshift(crystal.position);
 
     Object.values(ctx.bot.entities).forEach((e) => {
@@ -33,15 +31,17 @@ export function shouldAttemptAttack(ctx: Ctx, target: Entity, crystal: Entity): 
       const res = ctx.bot.util.raytrace.entityRaytrace(
         eyePos,
         rayPos.minus(eyePos).normalize(),
-        // players,
-        ctx.options.breaking.breakDistance
+        ctx.options.breaking.breakDistance + 1,
+        (e) => (e.type === "player" && e.id !== ctx.bot.entity.id) || e.entityType === ctx.tracker.endCrystalType
       );
       if (!res) {
-        console.log("no entity or block.")
+        console.log("no entity or block.");
         continue;
       }
       if (isRaycastEntity(res)) {
         if (crystal.id === res.id) {
+          const distance = Math.min(aabb.distanceToVec(ctx.bot.entity.position), aabb.distanceToVec(eyePos));
+          if (distance > ctx.options.breaking.breakDistance) continue;
           return { lookHere: rayPos, id: res.id };
         } else if (res.entityType === ctx.tracker.endCrystalType) {
           hitLook = rayPos;

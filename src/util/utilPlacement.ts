@@ -20,8 +20,10 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
   }
   if (checkBlocks.some((pos) => pos.equals(blockPos))) return false;
 
-  const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
-  if (eyePos.distanceTo(blockPos) > ctx.options.placement.placeDistance) return false;
+  const eyePos = ctx.bot.entity.position.offset(0, ctx.bot.entity.height, 0);
+  const aabb = AABB.fromBlock(blockPos);
+  const distance = Math.min(aabb.distanceToVec(ctx.bot.entity.position), aabb.distanceToVec(eyePos)); // aabb.distanceToVec(eyePos) //
+  if (distance > ctx.options.placement.placeDistance) return false;
 
   const crystalBBs = getAABBsFromOption(ctx);
   const { x, y, z } = blockPos;
@@ -43,18 +45,37 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
     if (dmg < ctx.options.placement.minDamage) return false;
   }
 
-
-
   if (ctx.options.placement.raycast) {
     let placeRef = new Vec3(0, 1, 0);
-    const checkPts = AABB.fromBlock(blockPos).toVertices().reverse();
+
+    const bbs: { [id: string]: AABB } = {};
+
+    if (ctx.options.placement.entityRaycast) {
+      Object.values(ctx.bot.entities)
+        .filter((e) => e.type === "player" && e.id !== ctx.bot.entity.id)
+        .forEach((e) => (bbs[e.id] = AABBUtils.getEntityAABB(e)));
+    }
+
+    const aabb = AABB.fromBlock(blockPos);
+    const checkPts = aabb.toVertices().reverse();
     checkPts.unshift(offset);
     for (const rayPos of checkPts) {
-      const rayBlock = ctx.bot.world.raycast(
-        eyePos,
-        rayPos.minus(eyePos).normalize(),
-        ctx.options.placement.placeDistance
-      );
+      let rayBlock;
+      if (ctx.options.placement.entityRaycast) {
+        rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
+          eyePos,
+          rayPos.minus(eyePos).normalize(),
+          bbs,
+          ctx.options.placement.placeDistance + 1
+        );
+      } else {
+        rayBlock = ctx.bot.world.raycast(
+          eyePos,
+          rayPos.minus(eyePos).normalize(),
+          ctx.options.placement.placeDistance + 1
+        );
+      }
+
       if (rayBlock === null) {
         console.log("null");
         continue;
@@ -62,6 +83,10 @@ export function isPosGood(ctx: Ctx, entity: Entity, blockPos: Vec3): PlaceType |
       if (!rayBlock.position.equals(blockPos)) {
         continue;
       }
+
+      const distance = Math.min(aabb.distanceToVec(ctx.bot.entity.position), aabb.distanceToVec(eyePos)); // aabb.distanceToVec(eyePos) //
+      if (distance > ctx.options.placement.placeDistance) continue;
+
       placeRef = blockFaceToVec(rayBlock.face);
       return { block: blockPos, lookHere: rayBlock.intersect, placeRef, dmg };
     }
@@ -79,7 +104,7 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
 
   const crystalBBs = getAABBsFromOption(ctx);
 
-  const eyePos = ctx.bot.entity.position.offset(0, 1.62, 0);
+  const eyePos = ctx.bot.entity.position.offset(0, ctx.bot.entity.height, 0);
   const checkBlocks: Vec3[] = [];
   for (let x = -0.3; x <= 0.3; x += 0.6) {
     for (let z = -0.3; z <= 0.3; z += 0.6) {
@@ -90,7 +115,9 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
   }
   const blockInfoFunc = (blockPos: Vec3) => {
     if (checkBlocks.some((pos) => pos.equals(blockPos))) return false;
-    if (eyePos.distanceTo(blockPos) > ctx.options.placement.placeDistance) return false;
+    const aabb = AABB.fromBlock(blockPos);
+    const distance = Math.min(aabb.distanceToVec(ctx.bot.entity.position), aabb.distanceToVec(eyePos)); // aabb.distanceToVec(blockPos) //
+    if (distance > ctx.options.placement.placeDistance) return false;
 
     const { x, y, z } = blockPos;
     const newCrystalBox = new AABB(x - 0.5, y + 1, z - 0.5, x + 1.5, y + 3, z + 1.5); //.expand(0.005, 0, 0.005);
@@ -101,31 +128,48 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     return ctx.bot.blockAt(blockPos.offset(0, 1, 0))?.name === "air";
   };
 
-  const findBlocksNearPoint = entity.position.offset(0, -1, 0); // .plus(entity.velocity);
-  let blocks = ctx.bot.customLookup.findBlocks({
+  const findBlocksNearPoint = entity.position; // .plus(entity.velocity);
+
+  // optimize this.
+  const time = performance.now();
+  let blocks = ctx.bot.customLookup.fasterFindBlocks({
     point: findBlocksNearPoint,
     matching: [ctx.bot.registry.blocksByName.obsidian.id, ctx.bot.registry.blocksByName.bedrock.id],
     maxDistance: ctx.options.placement.placeDistance + 2,
     count: 500,
   });
 
+  // console.log("time:", performance.now() - time, "found:", blocks.length)
+
   const bbs: { [id: string]: AABB } = {};
   Object.values(ctx.bot.entities)
     .filter((e) => e.type === "player" && e.id !== ctx.bot.entity.id)
-    .forEach((e) => bbs[e.id] = AABBUtils.getEntityAABB(e));
+    .forEach((e) => (bbs[e.id] = AABBUtils.getEntityAABB(e)));
+
   const defaultPlaceRef = new Vec3(0, 1, 0);
+
   const raycastFunc = (loc: Vec3): PlaceType | null => {
+    if (!ctx.options.placement.raycast) return null;
     let placeRef = new Vec3(0, 1, 0);
-    const checkPts = AABB.fromBlock(loc).toVertices().reverse();
+    const aabb = AABB.fromBlock(loc);
+    const checkPts = aabb.toVertices().reverse();
     checkPts.unshift(loc.offset(0.5, 1, 0.5));
     for (const rayPos of checkPts) {
-      // const rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
-        const rayBlock = ctx.bot.world.raycast(
-        eyePos,
-        rayPos.minus(eyePos).normalize(),
-        // bbs,
-        ctx.options.placement.placeDistance
-      );
+      let rayBlock;
+      if (ctx.options.placement.entityRaycast) {
+        rayBlock = ctx.bot.util.raytrace.entityRaytraceRaw(
+          eyePos,
+          rayPos.minus(eyePos).normalize(),
+          bbs,
+          ctx.options.placement.placeDistance + 1
+        );
+      } else {
+        rayBlock = ctx.bot.world.raycast(
+          eyePos,
+          rayPos.minus(eyePos).normalize(),
+          ctx.options.placement.placeDistance + 1
+        );
+      }
 
       if (rayBlock === null) {
         continue;
@@ -138,11 +182,16 @@ export function testFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
       if (!rayBlock.position.equals(loc)) {
         continue;
       }
+
+      const distance = Math.min(aabb.distanceToVec(ctx.bot.entity.position), aabb.distanceToVec(eyePos)); // aabb.distanceToVec(eyePos)//
+      if (distance > ctx.options.placement.placeDistance) continue;
+
       placeRef = blockFaceToVec(rayBlock.face);
       const dmg = ctx.bot.getExplosionDamages(entity, loc.offset(0.5, 1, 0.5), 6) ?? -1;
       if (dmg < ctx.options.placement.minDamage) return null;
       return { block: loc, lookHere: rayBlock.intersect, placeRef, dmg };
     }
+    // console.log("failed to place", loc)
     return null;
   };
 
@@ -179,8 +228,7 @@ export function predictiveFindPosition(ctx: Ctx, entity: Entity): PlaceType[] {
     const { x, y, z } = pos;
     const newCrystalBox = new AABB(x - 0.5, y + 1, z - 0.5, x + 1.5, y + 3, z + 1.5);
     if (ctx.options.positionLookup.positionDistanceFromOrigin !== undefined) {
-      if (predictedAABBs[org.toString()][0]?.distanceToVec(pos) > ctx.options.positionLookup.positionDistanceFromOrigin)
-        return false;
+      if (org.distanceTo(pos) > ctx.options.positionLookup.positionDistanceFromOrigin) return false;
     }
     return predictedAABBs[org.toString()].filter((aabb) => aabb.intersects(newCrystalBox)).length === 0;
   }
