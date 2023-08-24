@@ -2,7 +2,7 @@ import { AABB, AABBUtils, BlockFace, RaycastIterator } from "@nxg-org/mineflayer
 import type { Bot, FindBlockOptions } from "mineflayer";
 import { Block } from "prismarine-block";
 import type { Entity } from "prismarine-entity";
-import type { Item, NormalizedEnchant } from "prismarine-item";
+import type { Item } from "prismarine-item";
 import { Vec3 } from "vec3";
 
 const armorPieces = ["head", "torso", "legs", "feet"];
@@ -94,7 +94,7 @@ function getDamageAfterAbsorb(damages: number, armorValue: number, toughness: nu
   return damages * (1 - var4 / 25);
 }
 
-function getDamageWithEnchantments(damage: number, equipment: Item[]) {
+function getDamageWithEnchantments(damage: number, equipment: (Item | null)[]) {
   const enchantments = equipment.some((e) => !!e)
     ? equipment
         .map(
@@ -110,7 +110,7 @@ function getDamageWithEnchantments(damage: number, equipment: Item[]) {
                     return 0;
                 }
               })
-              .reduce((b: number, a: number) => b + a, 0) ?? [0]
+              .reduce((b: number, a: number) => b + a, 0) ?? 0
         )
         .reduce((b: number, a: number) => b + a, 0)
     : 0;
@@ -164,7 +164,7 @@ export function customDamageInject(bot: Bot) {
     if (!rawDamages && bot.entity.attributes[armorProtectionKey]) {
       const armor = getAttributeValue(bot.entity.attributes[armorProtectionKey]);
       const armorToughness = getAttributeValue(bot.entity.attributes[armorToughnessKey]);
-      const equipment = armorPieces.map((piece) => bot.inventory.slots[bot.getEquipmentDestSlot(piece)]);
+      const equipment: Item[] = armorPieces.map((piece) => bot.inventory.slots[bot.getEquipmentDestSlot(piece)]).filter(b=>!!b) as any;
 
       damages = getDamageAfterAbsorb(damages, armor, armorToughness);
       damages = getDamageWithEnchantments(damages, equipment);
@@ -201,10 +201,11 @@ export function customDamageInject(bot: Bot) {
       if (targetEntity.type === "player") {
         damages *= difficultyValues[bot.game.difficulty] * 0.5;
       }
-    } else if (!rawDamages && !targetEntity.attributes[armorProtectionKey]) {
-      console.log(targetEntity.attributes)
-      return null;
-    }
+    } 
+    // else if (!rawDamages && !targetEntity.attributes[armorProtectionKey]) {
+    //   console.log(targetEntity.attributes)
+    //   return null;
+    // }
     return damages;
   }
 

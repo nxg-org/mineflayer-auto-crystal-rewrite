@@ -9,6 +9,7 @@ import StrictEventEmitter from "strict-event-emitter-types/types/src/index";
 import { AutoCrystalOptions } from "../autoCrystal";
 import { DeepPartial, PlaceType } from "../types";
 import merge from "ts-deepmerge";
+import md from 'minecraft-data'
 
 interface CrystalTrackerEvents {
   serverCrystalDestroyed: (entity: Entity) => void;
@@ -51,7 +52,7 @@ export class CrystalTracker extends (EventEmitter as {
       { sound: false, explosion: false, careAboutPastPlacements: false, deletePlacementsBefore: 5 },
       options as AutoCrystalOptions["crystalTrackerOptions"]
     );
-    this.endCrystalType = Object.values(bot.registry.entitiesByName).find((k) => k.name.includes("_crystal"))!.id;
+    this.endCrystalType = (Object.values(bot.registry.entitiesByName) as md.Entity[]).find((k) => k.name.includes("_crystal"))!.id;
     let count = 0;
     let time = performance.now();
     let time1 = performance.now();
