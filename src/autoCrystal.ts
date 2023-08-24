@@ -43,6 +43,7 @@ export interface AutoCrystalOptions {
     ({ raycast: false } | { raycast: true; entityRaycast?: boolean });
   breaking: {
     predictOnSpawn: boolean;
+    immediatelyRemove: boolean;
     hitAll: boolean;
     minDamage: number;
     offhandAttack: boolean;
@@ -460,6 +461,11 @@ export class AutoCrystal extends EventEmitter {
 
       (this.bot as any).attack(entity, this.options.breaking.swingArm, this.options.breaking.offhandAttack);
       (this.bot.entities[hitId] as any).lastHit = performance.now();
+      if (this.options.breaking.immediatelyRemove) {
+        this.bot.entities[hitId].isValid = false;
+        this.bot.emit("entityGone", this.bot.entities[hitId]);
+        return;
+      }
 
       if (i < this.options.breaking.triesPerCrystal - 1) {
         await new Promise((res, rej) => {

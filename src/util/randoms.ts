@@ -72,6 +72,7 @@ export const DefaultOptions: AutoCrystalOptions = {
   },
   breaking: {
     predictOnSpawn: false,
+    immediatelyRemove: false,
     hitAll: false,
     minDamage: 0,
     breaksPerTry: 1,

@@ -20,13 +20,14 @@ const opts: AutoCrystalOptions = {
     placeAndBreak: true,
     tpsSync: {
         enabled: false,
-        placeSleep: 50,
-        breakSleep: 50,
+        placeSleep: 25,
+        breakSleep: 10,
         breakCrystalAge: 0,
-        breakWaitTimeout: 100
+        breakWaitTimeout: 10
     },
     breaking: {
-        breakDistance: 4.5,
+        breakDistance: 4,
+        immediatelyRemove: false,
         breaksPerTry: 1,
         delayBetweenTries: 25,
         hitAll: false,
@@ -61,9 +62,9 @@ const opts: AutoCrystalOptions = {
     },
     positionLookup: {
         async: true,
-        aabbCheck: 'current_nohit',
-        countAABBAfterXms: 10,
-        positionCount: 2,
+        aabbCheck: 'none',
+        // countAABBAfterXms: 10,
+        positionCount: 1,
         positionDistanceFromOrigin: 2
     },
     crystalTrackerOptions: {
