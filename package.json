@@ -2,7 +2,7 @@
   "name": "mineflayer-autocrystal-anarchy",
   "version": "0.0.2",
   "description": "Anarchy autocrystal for mineflayer.",
-  "main": "/lib/index.js",
+  "main": "./lib/index.js",
   "author": "GenerelSchwerz",
   "license": "MIT",
   "devDependencies": {
