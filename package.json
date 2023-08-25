@@ -1,14 +1,14 @@
 {
   "name": "mineflayer-autocrystal-anarchy",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Anarchy autocrystal for mineflayer.",
   "main": "./lib/index.js",
   "author": "GenerelSchwerz",
   "license": "MIT",
   "devDependencies": {
+    "mineflayer": "^4.12.0",
     "mineflayer-autocrystal-anarchy": ".",
-    "typescript": "5.2.2",
-    "mineflayer": "^4.12.0"
+    "typescript": "5.2.2"
   },
   "scripts": {
     "build": "npx tsc",
