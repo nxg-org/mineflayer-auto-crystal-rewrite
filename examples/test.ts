@@ -9,7 +9,7 @@ const port = Number(hostStr.split(':')[1])
 
 
 const bot = createBot({
-    username: 'crystal_test',
+    username: 'crystal_test1d',
     host,
     port,
     version: '1.19.4'
@@ -20,7 +20,7 @@ const opts: AutoCrystalOptions = {
     placeAndBreak: true,
     tpsSync: {
         enabled: false,
-        placeSleep: 25,
+        placeSleep: 50,
         breakSleep: 10,
         breakCrystalAge: 0,
         breakWaitTimeout: 10
@@ -46,12 +46,12 @@ const opts: AutoCrystalOptions = {
         placesPerTry: 1,
         predictOnBreak: false,
         predictOnExplosion: false,
-        raycast: false,
+        raycast: true,
         skipPosIfCrystalThere: true,
         stagger: false,
         useBackupPositions: false,
         useOffhand: false,
-        // entityRaycast: true
+        entityRaycast: false
     },
     rotation: {
         dontRotateIfCrystalAABBHit: true,
