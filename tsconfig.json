@@ -1,16 +1,16 @@
 {
     "compilerOptions": {
         "incremental": true,
-        "module": "NodeNext",
-        "moduleResolution": "nodenext",
-        "target": "ES6",
+        "module": "CommonJS",
+        "moduleResolution": "Node",
+        "target": "ES2015",
         "declaration": true,
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "outDir": "lib/",        
-        "lib": ["es6", "dom", "es2017"]
+        "lib": ["es6", "dom", "es2015"]
 
     },
     "include": ["src/**/*"],
