@@ -14,7 +14,7 @@
     "build": "npx tsc",
     "prepublish": "npm run build",
     "postinstall": "npm run build",
-    "ts:test": "ts-node -T example/example.ts"
+    "ts:test": "ts-node -T example/test.ts"
   },
   "dependencies": {
     "@nxg-org/mineflayer-util-plugin": "^1.7.9",
