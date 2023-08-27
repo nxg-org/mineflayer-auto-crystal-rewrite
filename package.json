@@ -1,6 +1,6 @@
 {
   "name": "mineflayer-autocrystal-anarchy",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Anarchy autocrystal for mineflayer.",
   "main": "./lib/index.js",
   "author": "GenerelSchwerz",
